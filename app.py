@@ -135,7 +135,7 @@ def extraer_coordenadas_kml(kml_content):
                             except ValueError:
                                 continue
                 
-                if coordenadas:
+                if coordenadas and len(coordenadas) >= 3:  # VALIDACIÓN: Al menos 3 puntos
                     if len(coordenadas) > 2 and coordenadas[0] != coordenadas[-1]:
                         coordenadas.append(coordenadas[0])
                     
@@ -145,7 +145,8 @@ def extraer_coordenadas_kml(kml_content):
                         'numero': i + 1
                     }
                     poligonos.append(poligono)
-    
+                elif coordenadas:
+                    st.warning(f"⚠️ Polígono '{nombre}' omitido: tiene solo {len(coordenadas)} puntos (mínimo 3)")    
     except Exception as e:
         st.error(f"Error procesando KML: {e}")
     
