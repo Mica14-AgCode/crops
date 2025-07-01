@@ -718,9 +718,15 @@ def generar_codigo_earth_engine_visor(aoi):
     """
     
     # Obtener todas las coordenadas del AOI para el código
+    aoi_definition = None
+    coordenadas_usuario_exitosas = False
+    
     try:
+        print("🔍 Extrayendo coordenadas del KMZ del usuario...")
         aoi_info = aoi.getInfo()
         features = aoi_info.get("features", [])
+        
+        print(f"📊 Número de features encontradas: {len(features)}")
         
         # Construir el código JavaScript para todas las features
         aoi_features_js = []
@@ -729,20 +735,37 @@ def generar_codigo_earth_engine_visor(aoi):
             geom = feature.get("geometry", {})
             if geom.get("type") == "Polygon":
                 coords = geom.get("coordinates", [[]])[0]  # Primer anillo
-                coords_str = ", ".join([f"[{c[0]}, {c[1]}]" for c in coords])
-                aoi_features_js.append(f"  ee.Feature(ee.Geometry.Polygon([[{coords_str}]]))")
+                if len(coords) >= 3:  # Mínimo 3 puntos para un polígono válido
+                    coords_str = ", ".join([f"[{c[0]}, {c[1]}]" for c in coords])
+                    aoi_features_js.append(f"  ee.Feature(ee.Geometry.Polygon([[{coords_str}]]))")
+                    print(f"✅ Polígono {i+1}: {len(coords)} coordenadas extraídas")
+                else:
+                    print(f"⚠️ Polígono {i+1}: Insuficientes coordenadas ({len(coords)})")
         
-        if not aoi_features_js:
-            # Fallback si no hay features válidas
-            aoi_features_js = ["  ee.Feature(ee.Geometry.Polygon([[[-60.0, -34.0], [-59.9, -34.0], [-59.9, -33.9], [-60.0, -33.9], [-60.0, -34.0]]]))"]
-        
-        aoi_definition = "var aoi = ee.FeatureCollection([\n" + ",\n".join(aoi_features_js) + "\n]);"
+        if aoi_features_js:
+            aoi_definition = "var aoi = ee.FeatureCollection([\n" + ",\n".join(aoi_features_js) + "\n]);"
+            coordenadas_usuario_exitosas = True
+            print(f"✅ Coordenadas del usuario extraídas exitosamente: {len(aoi_features_js)} polígonos")
+        else:
+            print("⚠️ No se encontraron polígonos válidos en las features")
         
     except Exception as e:
-        # Fallback en caso de error
+        print(f"❌ Error extrayendo coordenadas del usuario: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # Si no se pudieron extraer las coordenadas del usuario, usar fallback
+    if not coordenadas_usuario_exitosas:
+        print("🔄 Usando coordenadas de fallback (genéricas)")
         aoi_definition = """var aoi = ee.FeatureCollection([
-  ee.Feature(ee.Geometry.Polygon([[[-60.0, -34.0], [-59.9, -34.0], [-59.9, -33.9], [-60.0, -33.9], [-60.0, -34.0]]])
+  ee.Feature(ee.Geometry.Polygon([[[-60.0, -34.0], [-59.9, -34.0], [-59.9, -33.9], [-60.0, -33.9], [-60.0, -34.0]]]))
 ]);"""
+    
+    # Agregar comentario informativo sobre el origen de las coordenadas
+    if coordenadas_usuario_exitosas:
+        coord_origin_comment = "// ✅ AOI extraído automáticamente del archivo KMZ subido por el usuario"
+    else:
+        coord_origin_comment = "// ⚠️ AOI de ejemplo (no se pudieron extraer coordenadas del KMZ usuario)"
     
     codigo_js = f"""// ===================================================================
 // VISOR COMPLETO DE CULTIVOS POR CAMPAÑA - GOOGLE EARTH ENGINE
@@ -751,6 +774,7 @@ def generar_codigo_earth_engine_visor(aoi):
 // ===================================================================
 
 // ===== DEFINICIÓN DEL ÁREA DE INTERÉS (AOI) =====
+{coord_origin_comment}
 {aoi_definition}
 
 // ===== CONFIGURACIÓN INICIAL =====
@@ -1241,6 +1265,7 @@ def main():
                 
                 df_cultivos, area_total = analizar_cultivos_web(aoi)
                 
+                # Asegurar que siempre tengamos datos válidos para mostrar
                 if df_cultivos is not None and not df_cultivos.empty:
                     st.markdown('<div class="results-section">', unsafe_allow_html=True)
                     st.subheader("📊 Resultados del Análisis")
@@ -1352,6 +1377,8 @@ def main():
                     
                 else:
                     st.error("❌ No se pudieron analizar los cultivos")
+                    st.warning("Verifica que el archivo KMZ contenga polígonos válidos")
+                    st.info("Puedes intentar con otro archivo KMZ o verificar que el formato sea correcto")
     
     st.markdown("---")
     st.markdown("""
