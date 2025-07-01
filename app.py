@@ -603,11 +603,13 @@ def main():
                         cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
                         st.metric("Cultivos Detectados", cultivos_detectados)
                     with col3:
-                        area_agricola = df_cultivos[~df_cultivos['Cultivo'].str.contains('No agrícola', na=False)]['Área (ha)'].sum()
-                        st.metric("Área Agrícola", f"{area_agricola:.1f} ha")
+                        # CORRECCIÓN: Calcular área agrícola PROMEDIO por campaña
+                        area_agricola_por_campana = df_cultivos[~df_cultivos['Cultivo'].str.contains('No agrícola', na=False)].groupby('Campaña')['Área (ha)'].sum()
+                        area_agricola = area_agricola_por_campana.mean()
+                        st.metric("Área Agrícola", f"{area_agricola:.1f} ha", help="Promedio de área agrícola por campaña")
                     with col4:
                         porcentaje_agricola = (area_agricola / area_total * 100) if area_total > 0 else 0
-                        st.metric("% Agrícola", f"{porcentaje_agricola:.1f}%")
+                        st.metric("% Agrícola", f"{porcentaje_agricola:.1f}%", help="Porcentaje promedio de área agrícola")
                     
                     fig, df_rotacion = generar_grafico_rotacion_web(df_cultivos)
                     
