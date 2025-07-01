@@ -275,7 +275,19 @@ def analizar_cultivos_web(aoi):
         area_total_aoi = aoi.geometry().transform('EPSG:5345', maxError=1).area(maxError=1).divide(10000)
         area_total = area_total_aoi.getInfo()
         
+        # Paleta oficial de colores (misma que usas en los mapas oficiales)
+        paleta_oficial = [
+            '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', 
+            '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', 
+            '#0042ff', '#339820', '#FFFF00', '#f022db', '#ffffff', 
+            '#b7b9bd', '#FFA500', '#1d1e33', '#FF0000', '#a32102',
+            '#ffffff', '#646b63', '#e6f0c2', '#612517', '#94d200', '#ffffff', 
+            '#8A2BE2', '#ffffff', '#800080', '#ffffff', '#D2B48C',
+            '#87CEEB', '#90ee90'
+        ]
+        
         capas = {}
+        tiles_urls = {}  # Para almacenar URLs de tiles
         campanas = ['19-20', '20-21', '21-22', '22-23', '23-24']
         
         asset_map = {
@@ -322,6 +334,15 @@ def analizar_cultivos_web(aoi):
                     )
                 
                 capas[campana] = capa_combinada
+                
+                # Generar tiles URL para el mapa interactivo
+                try:
+                    vis_params = {'min': 0, 'max': 32, 'palette': paleta_oficial}
+                    map_id = capa_combinada.getMapId(vis_params)
+                    tiles_urls[campana] = map_id.get('tile_fetcher').get('url_template')
+                    st.info(f"✅ Tiles generados para campaña {campana}")
+                except Exception as tile_error:
+                    st.warning(f"Error generando tiles para {campana}: {tile_error}")
                 
             except Exception as e:
                 st.warning(f"Error cargando campaña {campana}: {e}")
@@ -388,11 +409,11 @@ def analizar_cultivos_web(aoi):
         progress_bar.empty()
         status_text.empty()
         
-        return pd.DataFrame(resultados_todas_campanas), area_total, capas
+        return pd.DataFrame(resultados_todas_campanas), area_total, tiles_urls, cultivos_por_campana
         
     except Exception as e:
         st.error(f"Error en análisis de cultivos: {e}")
-        return None, 0, {}
+        return None, 0, {}, {}
 
 def generar_grafico_rotacion_web(df_resultados):
     """Genera el gráfico de rotación para la web"""
@@ -522,6 +543,146 @@ def get_download_link(df, filename, link_text):
     href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">{link_text}</a>'
     return href
 
+
+def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_campana, campana_seleccionada):
+    """
+    Crea un mapa interactivo con tiles reales de Google Earth Engine
+    
+    Args:
+        aoi: FeatureCollection de Earth Engine 
+        tiles_urls: URLs de tiles por campaña
+        df_resultados: DataFrame con resultados
+        cultivos_por_campana: Diccionario de cultivos por campaña
+        campana_seleccionada: Campaña a mostrar
+        
+    Returns:
+        folium.Map: Mapa con tiles de Earth Engine
+    """
+    
+    # Obtener centro del AOI
+    try:
+        aoi_bounds = aoi.geometry().bounds()
+        bounds_info = aoi_bounds.getInfo()
+        center_lat = (bounds_info["coordinates"][0][1] + bounds_info["coordinates"][0][3]) / 2
+        center_lon = (bounds_info["coordinates"][0][0] + bounds_info["coordinates"][0][2]) / 2
+    except:
+        center_lat, center_lon = -34.0, -60.0
+    
+    # Crear mapa base
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=14,
+        tiles=None
+    )
+    
+    # Capas base
+    folium.TileLayer(
+        "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        attr="Google Satellite",
+        name="Satelital",
+        control=True
+    ).add_to(m)
+    
+    folium.TileLayer(
+        "OpenStreetMap", 
+        name="Mapa",
+        control=True
+    ).add_to(m)
+    
+    # Agregar tiles de Earth Engine para la campaña seleccionada
+    if campana_seleccionada in tiles_urls:
+        tile_url = tiles_urls[campana_seleccionada]
+        
+        folium.raster_layers.TileLayer(
+            tiles=tile_url,
+            attr='Google Earth Engine',
+            name=f'Cultivos {campana_seleccionada}',
+            overlay=True,
+            control=True,
+            opacity=0.7
+        ).add_to(m)
+    
+    # Agregar contorno del AOI
+    try:
+        aoi_geojson = aoi.getInfo()
+        folium.GeoJson(
+            aoi_geojson,
+            name="Límite del Campo",
+            style_function=lambda x: {
+                "fillColor": "transparent",
+                "color": "red", 
+                "weight": 3,
+                "fillOpacity": 0
+            }
+        ).add_to(m)
+    except Exception as e:
+        st.warning(f"No se pudo agregar contorno: {e}")
+    
+    # Crear leyenda oficial estilo mapas
+    df_campana = df_resultados[df_resultados['Campaña'] == campana_seleccionada]
+    cultivos_campana = cultivos_por_campana.get(campana_seleccionada, {})
+    
+    # Colores para la leyenda
+    colores_cultivos = {
+        'Maíz': '#0042ff', 'Soja 1ra': '#339820', 'Girasol': '#FFFF00', 'Poroto': '#f022db',
+        'Algodón': '#b7b9bd', 'Maní': '#FFA500', 'Arroz': '#1d1e33', 'Sorgo GR': '#FF0000',
+        'Caña de azúcar': '#a32102', 'Barbecho': '#646b63', 'No agrícola': '#e6f0c2',
+        'Papa': '#8A2BE2', 'Verdeo de Sorgo': '#800080', 'Tabaco': '#D2B48C',
+        'CI-Maíz 2da': '#87CEEB', 'CI-Soja 2da': '#90ee90', 'Girasol-CV': '#a32102'
+    }
+    
+    # Crear leyenda HTML estilo oficial
+    legend_html = f"""
+    <div style="position: fixed; 
+                bottom: 50px; right: 50px; width: 280px;
+                background-color: white; z-index:9999; 
+                border: 2px solid #333; border-radius: 8px;
+                padding: 15px; font-family: Arial, sans-serif;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.3);">
+                
+    <h3 style="margin: 0 0 15px 0; text-align: center; 
+               background-color: #2E8B57; color: white; 
+               padding: 8px; border-radius: 4px;">
+        Campaña {campana_seleccionada}
+    </h3>
+    """
+    
+    # Agregar cultivos con área > 0 ordenados por área
+    cultivos_con_area = df_campana[df_campana['Área (ha)'] > 0].sort_values('Área (ha)', ascending=False)
+    
+    for _, row in cultivos_con_area.iterrows():
+        cultivo = row['Cultivo']
+        area = row['Área (ha)']
+        porcentaje = row['Porcentaje (%)']
+        color = colores_cultivos.get(cultivo, '#999999')
+        
+        legend_html += f"""
+        <div style="display: flex; align-items: center; margin: 8px 0;">
+            <div style="width: 25px; height: 18px; background-color: {color}; 
+                        margin-right: 10px; border: 1px solid #333;
+                        border-radius: 2px;"></div>
+            <span style="font-size: 13px; font-weight: bold;">
+                {cultivo}: {area} ha ({porcentaje}%)
+            </span>
+        </div>
+        """
+    
+    legend_html += """
+    <div style="margin-top: 15px; padding-top: 10px; 
+                border-top: 1px solid #ccc; font-size: 11px; 
+                color: #666; text-align: center;">
+        🌾 Mapa Nacional de Cultivos<br>
+        Google Earth Engine
+    </div>
+    </div>
+    """
+    
+    m.get_root().html.add_child(folium.Element(legend_html))
+    
+    # Control de capas
+    folium.LayerControl(collapsed=False).add_to(m)
+    
+    return m
 
 def crear_visor_cultivos_interactivo(aoi, df_resultados):
     """
@@ -713,514 +874,50 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
 
 def generar_codigo_earth_engine_visor(aoi):
     """
-    Genera código JavaScript completo para Google Earth Engine Code Editor
-    que permite visualizar los cultivos por campaña con todas las funcionalidades
+    Genera código JavaScript para Google Earth Engine Code Editor
+    que permite visualizar los cultivos por campaña
     """
     
-    # Obtener todas las coordenadas del AOI para el código
-    aoi_definition = None
-    coordenadas_usuario_exitosas = False
-    
+    # Obtener información del AOI para el código
     try:
-        print("🔍 Extrayendo coordenadas del KMZ del usuario...")
         aoi_info = aoi.getInfo()
-        features = aoi_info.get("features", [])
+        # Simplificar para el código de ejemplo
+        first_feature = aoi_info["features"][0] if aoi_info.get("features") else None
         
-        print(f"📊 Número de features encontradas: {len(features)}")
-        
-        # Construir el código JavaScript para todas las features
-        aoi_features_js = []
-        
-        for i, feature in enumerate(features):
-            geom = feature.get("geometry", {})
-            if geom.get("type") == "Polygon":
-                coords = geom.get("coordinates", [[]])[0]  # Primer anillo
-                if len(coords) >= 3:  # Mínimo 3 puntos para un polígono válido
-                    coords_str = ", ".join([f"[{c[0]}, {c[1]}]" for c in coords])
-                    aoi_features_js.append(f"  ee.Feature(ee.Geometry.Polygon([[{coords_str}]]))")
-                    print(f"✅ Polígono {i+1}: {len(coords)} coordenadas extraídas")
-                else:
-                    print(f"⚠️ Polígono {i+1}: Insuficientes coordenadas ({len(coords)})")
-        
-        if aoi_features_js:
-            aoi_definition = "var aoi = ee.FeatureCollection([\n" + ",\n".join(aoi_features_js) + "\n]);"
-            coordenadas_usuario_exitosas = True
-            print(f"✅ Coordenadas del usuario extraídas exitosamente: {len(aoi_features_js)} polígonos")
+        if first_feature:
+            coords = first_feature["geometry"]["coordinates"][0]
+            # Tomar solo los primeros puntos para el ejemplo
+            coords_sample = coords[:5] if len(coords) > 5 else coords
+            
+            coords_str = ", ".join([f"[{c[0]}, {c[1]}]" for c in coords_sample])
+            
         else:
-            print("⚠️ No se encontraron polígonos válidos en las features")
-        
-    except Exception as e:
-        print(f"❌ Error extrayendo coordenadas del usuario: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    # Si no se pudieron extraer las coordenadas del usuario, usar fallback
-    if not coordenadas_usuario_exitosas:
-        print("🔄 Usando coordenadas de fallback (genéricas)")
-        aoi_definition = """var aoi = ee.FeatureCollection([
-  ee.Feature(ee.Geometry.Polygon([[[-60.0, -34.0], [-59.9, -34.0], [-59.9, -33.9], [-60.0, -33.9], [-60.0, -34.0]]])), {}
-]);"""
-    
-    # Agregar comentario informativo sobre el origen de las coordenadas
-    if coordenadas_usuario_exitosas:
-        coord_origin_comment = "// ✅ AOI extraído automáticamente del archivo KMZ subido por el usuario"
-    else:
-        coord_origin_comment = "// ⚠️ AOI de ejemplo (no se pudieron extraer coordenadas del KMZ del usuario)"
+            coords_str = "[-60.0, -34.0], [-59.9, -34.0], [-59.9, -33.9], [-60.0, -33.9], [-60.0, -34.0]"
+            
+    except:
+        coords_str = "[-60.0, -34.0], [-59.9, -34.0], [-59.9, -33.9], [-60.0, -33.9], [-60.0, -34.0]"
     
     codigo_js = f"""// ===================================================================
-// VISOR COMPLETO DE CULTIVOS POR CAMPAÑA - GOOGLE EARTH ENGINE
-// Generado automáticamente por la aplicación web de rotación de cultivos
-// Incluye análisis para campañas 2019-2020 hasta 2023-2024
+// VISOR DE CULTIVOS POR CAMPAÑA - GOOGLE EARTH ENGINE
+// Generado automáticamente por la aplicación web
 // ===================================================================
 
-// ===== DEFINICIÓN DEL ÁREA DE INTERÉS (AOI) =====
-{coord_origin_comment}
-{aoi_definition}
+// Definir el área de interés (AOI)
+var aoi = ee.FeatureCollection([
+  ee.Feature(ee.Geometry.Polygon([[{coords_str}]]))
+]);
 
-// ===== CONFIGURACIÓN INICIAL =====
-// Centrar el mapa en el AOI
-Map.centerObject(aoi, 10);
+// Centrar mapa en el AOI
+Map.centerObject(aoi, 13);
 
-// Agregar el contorno del AOI al mapa
-Map.addLayer(aoi, {{color: 'red', fillOpacity: 0, width: 2}}, 'Área de Interés');
+// Agregar AOI al mapa
+Map.addLayer(aoi, {{color: 'red', fillOpacity: 0}}, 'Área de Interés');
 
-// Calcular el área total del AOI en hectáreas
-var areaTotalAOI = aoi.geometry().transform('EPSG:5345', 1).area(1).divide(10000);
-
-// Calcular el área de cada píxel en metros cuadrados  
-var areaPixeles = ee.Image.pixelArea().reproject('EPSG:5345', null, 30);
-
-// Mostrar el área total del AOI en la consola
-print('Área total del AOI (hectáreas):', areaTotalAOI);
-
-// ===== DEFINICIÓN DE PALETAS Y NOMBRES DE CULTIVOS =====
-
-// Paleta de colores unificada para todos los cultivos
-var nuevaPaleta = [
-  '#ffffff', // 0: Blanco (no usado)
-  '#ffffff', // 1: Blanco (no usado)
-  '#ffffff', // 2: Blanco (no usado)
-  '#ffffff', // 3: Blanco (no usado)
-  '#ffffff', // 4: Blanco (no usado)
-  '#ffffff', // 5: Blanco (no usado)
-  '#ffffff', // 6: Blanco (no usado)
-  '#ffffff', // 7: Blanco (no usado)
-  '#ffffff', // 8: Blanco (no usado)
-  '#ffffff', // 9: Blanco (no usado)
-  '#0042ff', // 10: Maíz (Azul)
-  '#339820', // 11: Soja 1ra (Verde)
-  '#FFFF00', // 12: Girasol (Amarillo)
-  '#f022db', // 13: Poroto
-  '#ffffff', // 14: No usado (Caña de Azúcar ahora es ID 19)
-  '#b7b9bd', // 15: Algodón
-  '#FFA500', // 16: Maní (Naranja)
-  '#1d1e33', // 17: Arroz
-  '#FF0000', // 18: Sorgo GR (Rojo)
-  '#a32102', // 19: Caña de Azúcar / Girasol-CV (Rojo oscuro)
-  '#ffffff', // 20: No usado
-  '#646b63', // 21: Barbecho
-  '#e6f0c2', // 22: No agrícola
-  '#612517', // 23: No usado
-  '#94d200', // 24: No usado
-  '#ffffff', // 25: No usado
-  '#8A2BE2', // 26: Papa (Violeta)
-  '#ffffff', // 27: No usado
-  '#800080', // 28: Verdeo de Sorgo (Morado)
-  '#ffffff', // 29: No usado
-  '#D2B48C', // 30: Tabaco (Marrón claro)
-  '#87CEEB', // 31: CI-Maíz 2da (Azul claro/celeste)
-  '#90ee90'  // 32: CI-Soja 2da (Verde claro/fluor)
-];
-
-// Valor máximo para la paleta
-var maxValor = 32;
-
-// Función para calcular áreas y porcentajes con leyenda
-var calcularAreas = function(capa, cultivos, titulo, posicionLeyenda) {{
-  var areasCultivos = [];
-
-  // Calcular áreas y porcentajes
-  Object.keys(cultivos).forEach(function(cultivoId) {{
-    var nombre = cultivos[cultivoId];
-    var color = nuevaPaleta[cultivoId];
-
-    // Si el nombre es "XXX", omitir de la leyenda
-    if (nombre === 'XXX') {{
-      return; // Salir de esta iteración
-    }}
-
-    // Crear máscara para el cultivo
-    var mascaraCultivo = capa.eq(Number(cultivoId));
-
-    // Calcular área del cultivo
-    var areaCultivo = areaPixeles.multiply(mascaraCultivo).reduceRegion({{
-      reducer: ee.Reducer.sum(),
-      geometry: aoi.geometry(),
-      scale: 30, // Resolución de 30 metros
-      maxPixels: 1e13
-    }}).get('area');
-
-    // Convertir a hectáreas y redondear a entero
-    areaCultivo = ee.Number(areaCultivo).divide(10000).round();
-
-    // Calcular porcentaje respecto al AOI
-    var porcentajeCultivo = areaCultivo.divide(areaTotalAOI).multiply(100).round();
-
-    // Añadir a las listas
-    areasCultivos.push({{
-      'Cultivo': nombre,
-      'Área (ha)': areaCultivo,
-      'Porcentaje (%)': porcentajeCultivo,
-      'Color': color
-    }});
-  }});
-
-  // Evaluar las áreas y crear la leyenda
-  ee.List(areasCultivos).evaluate(function(result) {{
-    // Ordenar las áreas de mayor a menor
-    result.sort(function(a, b) {{
-      return b['Área (ha)'] - a['Área (ha)'];
-    }});
-
-    // Crear la leyenda
-    var legend = ui.Panel({{
-      style: {{
-        position: posicionLeyenda,
-        padding: '8px 15px',
-        backgroundColor: 'white',
-        border: '1px solid #ccc'
-      }}
-    }});
-
-    var legendTitle = ui.Label({{
-      value: titulo,
-      style: {{
-        fontWeight: 'bold',
-        fontSize: '18px',
-        margin: '0 0 4px 0',
-        padding: '0'
-      }}
-    }});
-    legend.add(legendTitle);
-
-    // Añadir cada cultivo y su área a la leyenda (solo si el área es >= 1 Ha)
-    result.forEach(function(item) {{
-      var nombre = item['Cultivo'];
-      var area = item['Área (ha)'];
-      var porcentaje = item['Porcentaje (%)'];
-      var color = item['Color'];
-
-      if (area >= 1) {{ // Solo agregar a la leyenda si el área es >= 1 Ha
-        var legendItem = ui.Panel({{
-          widgets: [
-            ui.Label({{
-              style: {{backgroundColor: color, padding: '8px', margin: '0 0 4px 0'}}
-            }}),
-            ui.Label({{
-              value: nombre + ' ' + (area || 0) + ' Ha (' + (porcentaje || 0) + '%)',
-              style: {{margin: '0 0 0 8px'}}
-            }})
-          ],
-          layout: ui.Panel.Layout.flow('horizontal')
-        }});
-
-        legend.add(legendItem);
-      }}
-    }});
-
-    // Añadir la leyenda al mapa
-    Map.add(legend);
-  }});
-}};
-
-// ===== CAMPAÑA 2019-2020 =====
-print('Procesando campaña 2019-2020...');
-
-var inv19 = ee.Image('projects/carbide-kayak-459911-n3/assets/inv19');
-var ver20 = ee.Image('projects/carbide-kayak-459911-n3/assets/ver20');
-var inv19_aoi = inv19.clip(aoi);
-var ver20_aoi = ver20.clip(aoi);
-
-var nuevaCapa1920 = ee.Image().expression(
-  '(verano == 10 && (invierno == 0 || invierno == 6)) ? 31 : ' + 
-  '(verano == 11 && (invierno == 0 || invierno == 6)) ? 32 : ' + 
-  '(verano == 10) ? 10 : (verano == 11) ? 11 : (verano == 14) ? 19 : verano', 
-  {{'verano': ver20_aoi, 'invierno': inv19_aoi}}
-);
-
-var nombresNuevaCapa1920 = {{
-  10: 'Maíz', 11: 'Soja 1ra', 12: 'Girasol', 13: 'Poroto', 15: 'Algodón',
-  16: 'Maní', 17: 'Arroz', 18: 'Sorgo GR', 19: 'Girasol-CV', 21: 'Barbecho',
-  22: 'No agrícola', 31: 'CI-Maíz 2da', 32: 'CI-Soja 2da'
-}};
-
-Map.addLayer(nuevaCapa1920, {{min: 0, max: maxValor, palette: nuevaPaleta, opacity: 0.5}}, 'Cultivos 2019/2020', false);
-
-// ===== CAMPAÑA 2020-2021 =====
-print('Procesando campaña 2020-2021...');
-var inv20 = ee.Image('projects/carbide-kayak-459911-n3/assets/inv20');
-var ver21 = ee.Image('projects/carbide-kayak-459911-n3/assets/ver21');
-var inv20_aoi = inv20.clip(aoi);
-var ver21_aoi = ver21.clip(aoi);
-
-var nuevaCapa2021 = ee.Image().expression(
-  '(verano == 10 && (invierno == 0 || invierno == 16 || invierno == 24)) ? 31 : ' + 
-  '(verano == 11 && (invierno == 0 || invierno == 16 || invierno == 24)) ? 32 : ' + 
-  '(verano == 10) ? 10 : (verano == 11) ? 11 : (verano == 14) ? 19 : verano', 
-  {{'verano': ver21_aoi, 'invierno': inv20_aoi}}
-);
-
-var nombresNuevaCapa2021 = {{
-  10: 'Maíz', 11: 'Soja 1ra', 12: 'Girasol', 13: 'Poroto', 15: 'Algodón',
-  16: 'Maní', 17: 'Arroz', 18: 'Sorgo GR', 19: 'Girasol-CV', 21: 'Barbecho',
-  22: 'No agrícola', 26: 'Papa', 28: 'Verdeo de Sorgo', 31: 'CI-Maíz 2da', 32: 'CI-Soja 2da'
-}};
-
-Map.addLayer(nuevaCapa2021, {{min: 0, max: maxValor, palette: nuevaPaleta, opacity: 0.5}}, 'Cultivos 2020/2021', false);
-
-// ===== CAMPAÑA 2021-2022 =====
-print('Procesando campaña 2021-2022...');
-var inv21 = ee.Image('projects/carbide-kayak-459911-n3/assets/inv21');
-var ver22 = ee.Image('projects/carbide-kayak-459911-n3/assets/ver22');
-var inv21_aoi = inv21.clip(aoi);
-var ver22_aoi = ver22.clip(aoi);
-
-var nuevaCapa2122 = ee.Image().expression(
-  '(verano == 10 && (invierno == 6 || invierno == 16 || invierno == 24)) ? 31 : ' + 
-  '(verano == 11 && (invierno == 6 || invierno == 16 || invierno == 24)) ? 32 : ' + 
-  '(verano == 10) ? 10 : (verano == 11) ? 11 : (verano == 14) ? 19 : verano', 
-  {{'verano': ver22_aoi, 'invierno': inv21_aoi}}
-);
-
-var nombresNuevaCapa2122 = {{
-  10: 'Maíz', 11: 'Soja 1ra', 12: 'Girasol', 13: 'Poroto', 15: 'Algodón',
-  16: 'Maní', 17: 'Arroz', 18: 'Sorgo GR', 19: 'Caña de Azúcar', 21: 'Barbecho',
-  22: 'No agrícola', 26: 'Papa', 28: 'Verdeo de Sorgo', 31: 'CI-Maíz 2da', 32: 'CI-Soja 2da'
-}};
-
-Map.addLayer(nuevaCapa2122, {{min: 0, max: maxValor, palette: nuevaPaleta, opacity: 0.5}}, 'Cultivos 2021/2022', false);
-
-// ===== CAMPAÑA 2022-2023 =====
-print('Procesando campaña 2022-2023...');
-var inv22 = ee.Image('projects/carbide-kayak-459911-n3/assets/inv22');
-var ver23 = ee.Image('projects/carbide-kayak-459911-n3/assets/ver23');
-var inv22_aoi = inv22.clip(aoi);
-var ver23_aoi = ver23.clip(aoi);
-
-var nuevaCapa2223 = ee.Image().expression(
-  '(verano == 10 && (invierno == 6 || invierno == 16 || invierno == 24)) ? 31 : ' + 
-  '(verano == 11 && (invierno == 6 || invierno == 16 || invierno == 24)) ? 32 : ' + 
-  '(verano == 10) ? 10 : (verano == 11) ? 11 : (verano == 14) ? 19 : verano', 
-  {{'verano': ver23_aoi, 'invierno': inv22_aoi}}
-);
-
-var nombresNuevaCapa2223 = {{
-  10: 'Maíz', 11: 'Soja 1ra', 12: 'Girasol', 13: 'Poroto', 15: 'Algodón',
-  16: 'Maní', 17: 'Arroz', 18: 'Sorgo GR', 19: 'Caña de Azúcar', 21: 'Barbecho',
-  22: 'No agrícola', 26: 'Papa', 28: 'Verdeo de Sorgo', 30: 'Tabaco', 31: 'CI-Maíz 2da', 32: 'CI-Soja 2da'
-}};
-
-Map.addLayer(nuevaCapa2223, {{min: 0, max: maxValor, palette: nuevaPaleta, opacity: 0.5}}, 'Cultivos 2022/2023', false);
-
-// ===== CAMPAÑA 2023-2024 =====
-print('Procesando campaña 2023-2024...');
-var inv23 = ee.Image('projects/carbide-kayak-459911-n3/assets/inv23');
-var ver24 = ee.Image('projects/carbide-kayak-459911-n3/assets/ver24');
-var inv23_aoi = inv23.clip(aoi);
-var ver24_aoi = ver24.clip(aoi);
-
-var nuevaCapa2324 = ee.Image().expression(
-  '(verano == 10 && (invierno == 6 || invierno == 16 || invierno == 24)) ? 31 : ' + 
-  '(verano == 11 && (invierno == 6 || invierno == 16 || invierno == 24)) ? 32 : ' + 
-  '(verano == 10) ? 10 : (verano == 11) ? 11 : (verano == 14) ? 19 : verano', 
-  {{'verano': ver24_aoi, 'invierno': inv23_aoi}}
-);
-
-var nombresNuevaCapa2324 = {{
-  10: 'Maíz', 11: 'Soja 1ra', 12: 'Girasol', 13: 'Poroto', 15: 'Algodón',
-  16: 'Maní', 17: 'Arroz', 18: 'Sorgo GR', 19: 'Caña de Azúcar', 21: 'Barbecho',
-  22: 'No agrícola', 26: 'Papa', 28: 'Verdeo de Sorgo', 30: 'Tabaco', 31: 'CI-Maíz 2da', 32: 'CI-Soja 2da'
-}};
-
-Map.addLayer(nuevaCapa2324, {{min: 0, max: maxValor, palette: nuevaPaleta, opacity: 0.5}}, 'Cultivos 2023/2024', true);
-
-// ===== ANÁLISIS DE ÁREAS =====
-calcularAreas(nuevaCapa2324, nombresNuevaCapa2324, 'Campaña 23-24', 'bottom-right');
-
-print('===================================================================');
-print('🌾 VISOR COMPLETO DE CULTIVOS - TODAS LAS CAMPAÑAS DISPONIBLES');
-print('===================================================================');
-print('✅ Capas cargadas: 2019-2020, 2020-2021, 2021-2022, 2022-2023, 2023-2024');
-print('📊 ÁREA TOTAL ANALIZADA:', areaTotalAOI, 'hectáreas');
-print('🔗 Código generado automáticamente desde: rotacion.streamlit.app');
+print('✓ Código generado automáticamente desde la aplicación web');
+print('✓ Para ver los cultivos, activa las capas en el panel de la derecha');
 """
     
     return codigo_js
-
-def crear_visor_ee_tiles(aoi, capas_cultivos):
-    """
-    Crea un visor que muestra las capas de Earth Engine como tiles reales
-    superpuestos en el mapa, mostrando cada píxel coloreado por cultivo
-    """
-    try:
-        # Obtener el centro del AOI
-        aoi_bounds = aoi.geometry().bounds()
-        bounds_info = aoi_bounds.getInfo()
-        center_lat = (bounds_info["coordinates"][0][1] + bounds_info["coordinates"][0][3]) / 2
-        center_lon = (bounds_info["coordinates"][0][0] + bounds_info["coordinates"][0][2]) / 2
-    except:
-        center_lat, center_lon = -34.0, -60.0
-    
-    # Crear mapa base
-    m = folium.Map(
-        location=[center_lat, center_lon],
-        zoom_start=14,  # Zoom más cercano para ver píxeles
-        tiles=None
-    )
-    
-    # Agregar capas base
-    folium.TileLayer(
-        "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-        attr="Google Satellite",
-        name="Satelital",
-        control=True
-    ).add_to(m)
-    
-    # Función para obtener URL de tiles de Earth Engine
-    def get_ee_tile_url(ee_image, vis_params):
-        """Genera URL de tiles para una imagen de Earth Engine"""
-        try:
-            # Verificar que la imagen tenga datos
-            pixel_count = ee_image.select(0).reduceRegion(
-                reducer=ee.Reducer.count(),
-                geometry=aoi.geometry(),
-                scale=1000,
-                maxPixels=1e6
-            ).getInfo()
-            
-            if not pixel_count or all(v == 0 for v in pixel_count.values()):
-                st.warning(f"No hay datos en la imagen para esta área")
-                return None
-            
-            # Generar tiles
-            map_id = ee_image.getMapId(vis_params)
-            tile_url_template = map_id['tile_fetcher'].url_format
-            return tile_url_template
-            
-        except Exception as e:
-            st.error(f"Error crítico generando tiles: {e}")
-            return None
-    
-    # Paleta de colores para cultivos (misma que Earth Engine)
-    paleta_cultivos = [
-        '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', 
-        '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff',
-        '#0042ff',  # 10: Maíz
-        '#339820',  # 11: Soja 1ra  
-        '#FFFF00',  # 12: Girasol
-        '#f022db',  # 13: Poroto
-        '#ffffff',  # 14: No usado
-        '#b7b9bd',  # 15: Algodón
-        '#FFA500',  # 16: Maní
-        '#1d1e33',  # 17: Arroz
-        '#FF0000',  # 18: Sorgo GR
-        '#a32102',  # 19: Caña de azúcar/Girasol-CV
-        '#ffffff', '#646b63', '#e6f0c2', '#612517', '#94d200',
-        '#ffffff', '#8A2BE2', '#ffffff', '#800080', '#ffffff',
-        '#D2B48C', '#87CEEB', '#90ee90'  # 30: Tabaco, 31: CI-Maíz, 32: CI-Soja
-    ]
-    
-    # Parámetros de visualización para Earth Engine
-    vis_params = {
-        'min': 0,
-        'max': 32,
-        'palette': paleta_cultivos,
-        'opacity': 0.7
-    }
-    
-    # Agregar cada campaña como capa de tiles
-    for campana, capa_ee in capas_cultivos.items():
-        try:
-            # Recortar la capa al AOI
-            capa_recortada = capa_ee.clip(aoi.geometry())
-            
-            # Obtener URL de tiles
-            tile_url = get_ee_tile_url(capa_recortada, vis_params)
-            
-            if tile_url:
-                # Agregar como capa de tiles en Folium (forma correcta)
-                folium.TileLayer(
-                    tiles=tile_url,
-                    attr=f"Earth Engine - {campana}",
-                    name=f"Cultivos {campana}",
-                    overlay=True,
-                    control=True,
-                    opacity=0.7,
-                    show=campana == '23-24'  # Mostrar solo la campaña más reciente por defecto
-                ).add_to(m)
-                
-                st.success(f"✅ Capa agregada: {campana}")
-            else:
-                st.warning(f"⚠️ No se pudo generar tiles para {campana}")
-                
-        except Exception as e:
-            st.error(f"❌ Error procesando campaña {campana}: {e}")
-    
-    # Agregar contorno del AOI
-    try:
-        aoi_geojson = aoi.getInfo()
-        folium.GeoJson(
-            aoi_geojson,
-            name="Límite del Campo",
-            style_function=lambda x: {
-                "fillColor": "transparent",
-                "color": "red", 
-                "weight": 3,
-                "fillOpacity": 0
-            }
-        ).add_to(m)
-    except Exception as e:
-        st.warning(f"Error agregando contorno: {e}")
-    
-    # Control de capas
-    folium.LayerControl(collapsed=False).add_to(m)
-    
-    # Leyenda de cultivos
-    legend_html = """
-    <div style="position: fixed; bottom: 50px; left: 50px; width: 250px; 
-                background-color: white; z-index:9999; font-size:12px;
-                border:2px solid grey; padding: 10px; border-radius: 5px;">
-    <h4 style="margin-top:0;">🌾 Cultivos - Píxeles Reales</h4>
-    <div style="margin: 5px 0;">
-        <span style="background-color: #0042ff; width: 15px; height: 15px; 
-                     display: inline-block; margin-right: 5px;"></span>
-        <span>Maíz</span>
-    </div>
-    <div style="margin: 5px 0;">
-        <span style="background-color: #339820; width: 15px; height: 15px; 
-                     display: inline-block; margin-right: 5px;"></span>
-        <span>Soja 1ra</span>
-    </div>
-    <div style="margin: 5px 0;">
-        <span style="background-color: #FFFF00; width: 15px; height: 15px; 
-                     display: inline-block; margin-right: 5px;"></span>
-        <span>Girasol</span>
-    </div>
-    <div style="margin: 5px 0;">
-        <span style="background-color: #e6f0c2; width: 15px; height: 15px; 
-                     display: inline-block; margin-right: 5px;"></span>
-        <span>No agrícola</span>
-    </div>
-    <p style="margin: 10px 0 0 0; font-size: 10px;">
-        💡 Cada píxel muestra el cultivo detectado<br/>
-        🔄 Cambia entre campañas en el control de capas
-    </p>
-    </div>
-    """
-    
-    m.get_root().html.add_child(folium.Element(legend_html))
-    
-    return m
 
 def main():
     with st.sidebar:
@@ -1251,7 +948,7 @@ def main():
     
     if not st.session_state.ee_initialized:
         st.error("❌ No se pudo conectar con Google Earth Engine. Verifica la configuración.")
-        st.stop()
+        return
     
     st.success("✅ Google Earth Engine conectado correctamente")
     
@@ -1273,10 +970,6 @@ def main():
             for file in uploaded_files:
                 st.write(f"📄 {file.name} ({file.size:,} bytes)")
         
-        # Mostrar estado del análisis anterior si existe
-        if st.session_state.get('analisis_completado', False):
-            st.info("ℹ️ Análisis anterior completado. Puedes analizar nuevos archivos si deseas.")
-        
         if st.button("🚀 Analizar Cultivos y Rotación", type="primary"):
             with st.spinner("Procesando archivos KMZ..."):
                 todos_los_poligonos = []
@@ -1286,9 +979,7 @@ def main():
                 
                 if not todos_los_poligonos:
                     st.error("❌ No se encontraron polígonos válidos en los archivos")
-                    st.warning("Verifica que el archivo KMZ contenga polígonos válidos")
-                    st.info("Puedes intentar con otro archivo KMZ o verificar que el formato sea correcto")
-                    st.stop()
+                    return
                 
                 st.info(f"📊 {len(todos_los_poligonos)} polígonos extraídos de {len(uploaded_files)} archivo(s)")
                 
@@ -1296,14 +987,19 @@ def main():
                 
                 if not aoi:
                     st.error("❌ No se pudo crear el área de interés")
-                    st.warning("Verifica que el archivo KMZ contenga polígonos válidos")
-                    st.info("Puedes intentar con otro archivo KMZ o verificar que el formato sea correcto")
-                    st.stop()
+                    return
                 
-                df_cultivos, area_total, capas_ee = analizar_cultivos_web(aoi)
+                resultado = analizar_cultivos_web(aoi)
                 
-                # Verificar resultados antes de mostrarlos
-                if df_cultivos is not None and not df_cultivos.empty and capas_ee:
+                if len(resultado) == 4:
+                    df_cultivos, area_total, tiles_urls, cultivos_por_campana = resultado
+                else:
+                    # Fallback para compatibilidad
+                    df_cultivos, area_total = resultado[:2]
+                    tiles_urls = {}
+                    cultivos_por_campana = {}
+                
+                if df_cultivos is not None and not df_cultivos.empty:
                     st.markdown('<div class="results-section">', unsafe_allow_html=True)
                     st.subheader("📊 Resultados del Análisis")
                     
@@ -1322,131 +1018,133 @@ def main():
                         porcentaje_agricola = (area_agricola / area_total * 100) if area_total > 0 else 0
                         st.metric("% Agrícola", f"{porcentaje_agricola:.1f}%", help="Porcentaje promedio de área agrícola")
                     
-                    try:
-                        # Procesar gráfico con manejo robusto de errores
-                        fig, df_rotacion = generar_grafico_rotacion_web(df_cultivos)
+                    fig, df_rotacion = generar_grafico_rotacion_web(df_cultivos)
+                    
+                    if fig is not None:
+                        st.subheader("🎨 Gráfico de Rotación de Cultivos")
+                        st.pyplot(fig)
                         
-                        if fig is not None:
-                            st.subheader("🎨 Gráfico de Rotación de Cultivos")
-                            st.pyplot(fig)
-                            plt.close(fig)  # Liberar memoria
+                        st.subheader("📋 Tabla de Rotación (%)")
+                        df_display = df_rotacion.copy()
+                        df_display = df_display.rename(columns={'Cultivo_Estandarizado': 'Cultivo'})
+                        st.dataframe(df_display, use_container_width=True)
+                        
+                        
+                        # ===== VISOR INTERACTIVO CON TILES DE EARTH ENGINE =====
+                        st.subheader("🗺️ Mapa Interactivo de Cultivos")
+                        st.write("Explora los píxeles de cultivos reales de Google Earth Engine:")
+                        
+                        # Dropdown para seleccionar campaña
+                        campanas_disponibles = sorted(df_cultivos['Campaña'].unique())
+                        
+                        col_dropdown, col_info = st.columns([1, 2])
+                        with col_dropdown:
+                            campana_seleccionada = st.selectbox(
+                                "🗓️ Seleccionar Campaña:",
+                                campanas_disponibles,
+                                index=len(campanas_disponibles)-1  # Por defecto la más reciente
+                            )
+                        
+                        with col_info:
+                            # Mostrar info de la campaña seleccionada
+                            df_sel = df_cultivos[df_cultivos['Campaña'] == campana_seleccionada]
+                            cultivos_sel = len(df_sel[df_sel['Área (ha)'] > 0])
+                            area_agricola_sel = df_sel[~df_sel['Cultivo'].str.contains('No agrícola', na=False)]['Área (ha)'].sum()
                             
-                            st.subheader("📋 Tabla de Rotación (%)")
-                            df_display = df_rotacion.copy()
-                            df_display = df_display.rename(columns={'Cultivo_Estandarizado': 'Cultivo'})
-                            st.dataframe(df_display, use_container_width=True)
-                            
-                            # ===== VISOR INTERACTIVO DE CULTIVOS =====
-                            st.subheader("🗺️ Visor Interactivo de Cultivos")
-                            st.write("Explora los cultivos detectados en cada campaña usando el mapa interactivo:")
-                            
-                            try:
-                                # Crear visor con píxeles reales de Earth Engine
-                                st.info("🚀 Generando visor con píxeles reales de Earth Engine...")
-                                mapa_cultivos = crear_visor_ee_tiles(aoi, capas_ee)
+                            st.metric(
+                                f"Campaña {campana_seleccionada}", 
+                                f"{area_agricola_sel:.1f} ha agrícolas",
+                                help=f"{cultivos_sel} cultivos detectados"
+                            )
+                        
+                        try:
+                            if tiles_urls and campana_seleccionada in tiles_urls:
+                                # Crear mapa con tiles reales de Earth Engine
+                                mapa_tiles = crear_mapa_con_tiles_engine(
+                                    aoi, tiles_urls, df_cultivos, 
+                                    cultivos_por_campana, campana_seleccionada
+                                )
                                 
-                                # Mostrar el mapa usando streamlit-folium
-                                map_data = st_folium(mapa_cultivos, width=700, height=500)
+                                # Mostrar el mapa
+                                map_data = st_folium(mapa_tiles, width=700, height=500)
                                 
-                                st.success("✅ **Visor de píxeles reales generado!**")
-                                st.info("💡 **Cómo usar el visor:**")
+                                st.success("✅ **Mapa con píxeles reales de Google Earth Engine**")
+                                st.info("💡 **Cómo usar el mapa:**")
                                 st.write("""
-                                - 🔘 **Capas base**: Cambia entre vista satelital, híbrida o mapa
-                                - 📅 **Campañas**: Activa/desactiva las campañas en el control de capas
-                                - 🌾 **Píxeles reales**: Cada píxel muestra el cultivo detectado por Earth Engine
-                                - 🎨 **Colores**: Misma paleta que Google Earth Engine Code Editor
-                                - 🔍 **Zoom**: Acércate para ver los píxeles individuales
+                                - 🎨 **Píxeles de colores**: Cada color representa un cultivo específico
+                                - 🗓️ **Cambiar campaña**: Usa el dropdown arriba para ver otras años
+                                - 🔍 **Zoom**: Acerca/aleja para ver más detalle
+                                - 📊 **Leyenda**: Área y porcentaje de cada cultivo (esquina inferior derecha)
+                                - 🗺️ **Capas base**: Cambia entre satelital y mapa en el control de capas
                                 """)
                                 
-                            except Exception as e:
-                                st.warning(f"Error generando el visor de píxeles reales: {e}")
-                                st.info("Intentando visor alternativo...")
-                                try:
-                                    # Fallback al visor anterior
-                                    mapa_cultivos = crear_visor_cultivos_interactivo(aoi, df_cultivos)
-                                    map_data = st_folium(mapa_cultivos, width=700, height=500)
-                                    st.info("📊 Mostrando visor con marcadores de área por cultivo")
-                                except Exception as e2:
-                                    st.error(f"Error en ambos visores: {e2}")
-                                    st.info("El análisis de cultivos se completó exitosamente, pero no se pudo generar el mapa interactivo.")
+                            else:
+                                st.warning("⚠️ No hay tiles disponibles para esta campaña")
+                                # Fallback al visor anterior
+                                mapa_cultivos = crear_visor_cultivos_interactivo(aoi, df_cultivos)
+                                map_data = st_folium(mapa_cultivos, width=700, height=500)
                             
-                            st.subheader("💾 Descargar Resultados")
+                        except Exception as e:
+                            st.error(f"Error generando el mapa con tiles: {e}")
+                            st.info("El análisis se completó correctamente, pero no se pudo mostrar el mapa con tiles.")
+                        st.subheader("💾 Descargar Resultados")
+                        
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            filename_cultivos = f"cultivos_por_campana_{timestamp}.csv"
+                            download_link_cultivos = get_download_link(df_cultivos, filename_cultivos, "📊 Descargar CSV - Cultivos por Campaña")
+                            st.markdown(download_link_cultivos, unsafe_allow_html=True)
+                        
+                        with col2:
+                            filename_rotacion = f"rotacion_cultivos_{timestamp}.csv"
+                            download_link_rotacion = get_download_link(df_display, filename_rotacion, "🔄 Descargar CSV - Rotación de Cultivos")
+                            st.markdown(download_link_rotacion, unsafe_allow_html=True)
+                        
+                        with col3:
+                            # Generar código de Earth Engine
+                            codigo_ee = generar_codigo_earth_engine_visor(aoi)
+                            filename_codigo = f"earth_engine_visor_{timestamp}.js"
                             
-                            col1, col2, col3 = st.columns(3)
-                            
-                            with col1:
-                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                filename_cultivos = f"cultivos_por_campana_{timestamp}.csv"
-                                download_link_cultivos = get_download_link(df_cultivos, filename_cultivos, "📊 Descargar CSV - Cultivos por Campaña")
-                                st.markdown(download_link_cultivos, unsafe_allow_html=True)
-                            
-                            with col2:
-                                filename_rotacion = f"rotacion_cultivos_{timestamp}.csv"
-                                download_link_rotacion = get_download_link(df_display, filename_rotacion, "🔄 Descargar CSV - Rotación de Cultivos")
-                                st.markdown(download_link_rotacion, unsafe_allow_html=True)
-                            
-                            with col3:
-                                # Generar código de Earth Engine
-                                codigo_ee = generar_codigo_earth_engine_visor(aoi)
-                                filename_codigo = f"earth_engine_visor_{timestamp}.js"
-                                
-                                # Crear enlace de descarga para el código JS
-                                b64_codigo = base64.b64encode(codigo_ee.encode()).decode()
-                                download_link_codigo = f"""
-                                <a href="data:text/javascript;base64,{b64_codigo}" download="{filename_codigo}">
-                                    <button style="
-                                        background-color: #ff6b35;
-                                        border: none;
-                                        color: white;
-                                        padding: 8px 16px;
-                                        text-align: center;
-                                        text-decoration: none;
-                                        display: inline-block;
-                                        font-size: 14px;
-                                        margin: 4px 2px;
-                                        cursor: pointer;
-                                        border-radius: 4px;
-                                    ">🗺️ Código Earth Engine</button>
-                                </a>
-                                """
-                                st.markdown(download_link_codigo, unsafe_allow_html=True)
-                                st.caption("Úsalo en Google Earth Engine Code Editor")
-                            
-                            st.subheader("📈 Resumen por Campaña")
-                            pivot_summary = df_cultivos.pivot_table(
-                                index='Cultivo', 
-                                columns='Campaña', 
-                                values='Área (ha)', 
-                                aggfunc='sum', 
-                                fill_value=0
-                            )
-                            pivot_summary['Total'] = pivot_summary.sum(axis=1)
-                            pivot_filtered = pivot_summary[pivot_summary['Total'] > 0].sort_values('Total', ascending=False)
-                            st.dataframe(pivot_filtered, use_container_width=True)
-                            
-                        else:
-                            st.warning("No se pudo generar el gráfico de rotación")
-                            
-                    except Exception as e:
-                        st.error(f"Error durante el análisis: {e}")
-                        st.warning("Verifica que el archivo KMZ contenga polígonos válidos")
-                        st.info("Puedes intentar con otro archivo KMZ o verificar que el formato sea correcto")
-                    
+                            # Crear enlace de descarga para el código JS
+                            b64_codigo = base64.b64encode(codigo_ee.encode()).decode()
+                            download_link_codigo = f"""
+                            <a href="data:text/javascript;base64,{b64_codigo}" download="{filename_codigo}">
+                                <button style="
+                                    background-color: #ff6b35;
+                                    border: none;
+                                    color: white;
+                                    padding: 8px 16px;
+                                    text-align: center;
+                                    text-decoration: none;
+                                    display: inline-block;
+                                    font-size: 14px;
+                                    margin: 4px 2px;
+                                    cursor: pointer;
+                                    border-radius: 4px;
+                                ">🗺️ Código Earth Engine</button>
+                            </a>
+                            """
+                            st.markdown(download_link_codigo, unsafe_allow_html=True)
+                            st.caption("�� Úsalo en Google Earth Engine Code Editor")
+                        
+                        st.subheader("📈 Resumen por Campaña")
+                        pivot_summary = df_cultivos.pivot_table(
+                            index='Cultivo', 
+                            columns='Campaña', 
+                            values='Área (ha)', 
+                            aggfunc='sum', 
+                            fill_value=0
+                        )
+                        pivot_summary['Total'] = pivot_summary.sum(axis=1)
+                        pivot_filtered = pivot_summary[pivot_summary['Total'] > 0].sort_values('Total', ascending=False)
+                        st.dataframe(pivot_filtered, use_container_width=True)
+                        
                     st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    # Marcar análisis como completado exitosamente
-                    st.session_state['analisis_completado'] = True
-                    st.session_state['analisis_en_progreso'] = False
-                    
-                    # Mensaje de éxito para confirmar que todo funcionó
-                    st.success("🎉 ¡Análisis completado exitosamente! Puedes descargar los resultados o analizar otros archivos.")
-                    st.info("💡 La aplicación se mantiene abierta - puedes subir más archivos KMZ si deseas.")
                     
                 else:
                     st.error("❌ No se pudieron analizar los cultivos")
-                    st.warning("Verifica que el archivo KMZ contenga polígonos válidos")
-                    st.info("Puedes intentar con otro archivo KMZ o verificar que el formato sea correcto")
-                    st.session_state['analisis_en_progreso'] = False
     
     st.markdown("---")
     st.markdown("""
@@ -1456,6 +1154,4 @@ def main():
     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
-    main()
-    # Mantener la aplicación activa - evitar cierre automático
-    pass 
+    main() 
