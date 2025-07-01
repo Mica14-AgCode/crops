@@ -358,23 +358,52 @@ def analizar_cultivos_web(aoi):
                         tiles_urls[campana] = map_id['urlTemplate']
                         st.success(f"✅ Tiles (método 3) para {campana}")
                     
-                    # Método 4: Explorar lo que hay dentro del tile_fetcher
+                    # Método 4: tile_fetcher es un objeto de Earth Engine
                     elif 'tile_fetcher' in map_id:
                         tile_fetcher = map_id['tile_fetcher']
-                        tf_attrs = dir(tile_fetcher) if hasattr(tile_fetcher, '__dict__') else []
-                        tf_keys = list(tile_fetcher.keys()) if isinstance(tile_fetcher, dict) else []
-                        st.warning(f"🔍 tile_fetcher para {campana} - Atributos: {tf_attrs[:5]} | Keys: {tf_keys}")
                         
-                        # Intentar diferentes nombres de propiedades
-                        for prop_name in ['url_template', 'urlTemplate', 'template', 'url', 'baseUrl']:
-                            if hasattr(tile_fetcher, prop_name):
-                                tiles_urls[campana] = getattr(tile_fetcher, prop_name)
-                                st.success(f"✅ Tiles (prop {prop_name}) para {campana}")
-                                break
-                            elif isinstance(tile_fetcher, dict) and prop_name in tile_fetcher:
-                                tiles_urls[campana] = tile_fetcher[prop_name]
-                                st.success(f"✅ Tiles (key {prop_name}) para {campana}")
-                                break
+                        # Para objetos de EE, necesitamos getInfo() para obtener los datos
+                        try:
+                            tf_info = tile_fetcher.getInfo() if hasattr(tile_fetcher, 'getInfo') else tile_fetcher
+                            st.info(f"🔍 tile_fetcher info para {campana}: {type(tf_info)} - {str(tf_info)[:100]}...")
+                            
+                            # Buscar URL en la información del tile_fetcher
+                            if isinstance(tf_info, dict):
+                                for url_key in ['url_template', 'urlTemplate', 'template', 'url', 'baseUrl']:
+                                    if url_key in tf_info:
+                                        tiles_urls[campana] = tf_info[url_key]
+                                        st.success(f"✅ Tiles encontrados (getInfo.{url_key}) para {campana}")
+                                        break
+                            
+                            # Si no se encontró, intentar acceso directo
+                            if campana not in tiles_urls:
+                                for prop_name in ['url_template', 'urlTemplate', 'template', 'url', 'baseUrl']:
+                                    if hasattr(tile_fetcher, prop_name):
+                                        url_val = getattr(tile_fetcher, prop_name)
+                                        if url_val:
+                                            tiles_urls[campana] = url_val
+                                            st.success(f"✅ Tiles (directo.{prop_name}) para {campana}")
+                                            break
+                                            
+                        except Exception as tf_error:
+                            st.warning(f"Error explorando tile_fetcher para {campana}: {tf_error}")
+                            
+                            # Como último recurso, intentar convertir a string y buscar patterns
+                            tf_str = str(tile_fetcher)
+                            if 'earthengine' in tf_str.lower():
+                                st.info(f"tile_fetcher es objeto EE: {tf_str[:200]}...")
+                                # Intentar generar URL manualmente
+                                try:
+                                    # Usar el map_id directamente para construir URL
+                                    if 'mapid' in map_id:
+                                        mapid = map_id['mapid']
+                                        token = map_id.get('token', '')
+                                        base_url = "https://earthengine.googleapis.com/v1alpha/projects/earthengine-legacy/maps"
+                                        manual_url = f"{base_url}/{mapid}/tiles/{{z}}/{{x}}/{{y}}?token={token}"
+                                        tiles_urls[campana] = manual_url
+                                        st.success(f"✅ URL manual generada para {campana}")
+                                except Exception as manual_error:
+                                    st.error(f"Error generando URL manual: {manual_error}")
                     else:
                         keys_disponibles = list(map_id.keys()) if hasattr(map_id, 'keys') else []
                         st.error(f"❌ No hay tile_fetcher para {campana}. Keys: {keys_disponibles}")
