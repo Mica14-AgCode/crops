@@ -1,0 +1,55 @@
+def extraer_coordenadas_kml(kml_content):
+    """Extrae coordenadas de un archivo KML"""
+    poligonos = []
+    
+    try:
+        root = ET.fromstring(kml_content)
+        namespaces = {'kml': 'http://www.opengis.net/kml/2.2'}
+        if root.tag.startswith('{'):
+            namespace = root.tag.split('}')[0] + '}'
+            namespaces['kml'] = namespace[1:-1]
+        
+        placemarks = root.findall('.//kml:Placemark', namespaces)
+        
+        for i, placemark in enumerate(placemarks):
+            nombre = "Sin nombre"
+            name_elem = placemark.find('.//kml:name', namespaces)
+            if name_elem is not None and name_elem.text:
+                nombre = name_elem.text.strip()
+            
+            coords_elem = placemark.find('.//kml:Polygon//kml:coordinates', namespaces)
+            if coords_elem is None:
+                coords_elem = placemark.find('.//kml:Point//kml:coordinates', namespaces)
+            
+            if coords_elem is not None and coords_elem.text:
+                coords_text = coords_elem.text.strip()
+                coordenadas = []
+                
+                for coord_line in coords_text.split():
+                    if coord_line.strip():
+                        parts = coord_line.split(',')
+                        if len(parts) >= 2:
+                            try:
+                                lon = float(parts[0])
+                                lat = float(parts[1])
+                                coordenadas.append([lon, lat])
+                            except ValueError:
+                                continue
+                
+                if coordenadas and len(coordenadas) >= 3:  # VALIDACIÓN: Al menos 3 puntos
+                    if len(coordenadas) > 2 and coordenadas[0] != coordenadas[-1]:
+                        coordenadas.append(coordenadas[0])
+                    
+                    poligono = {
+                        'nombre': nombre,
+                        'coords': coordenadas,
+                        'numero': i + 1
+                    }
+                    poligonos.append(poligono)
+                elif coordenadas:
+                    st.warning(f"⚠️ Polígono '{nombre}' omitido: tiene solo {len(coordenadas)} puntos (mínimo 3)")    
+    except Exception as e:
+        st.error(f"Error procesando KML: {e}")
+    
+    return poligonos
+
