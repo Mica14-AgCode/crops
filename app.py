@@ -340,23 +340,44 @@ def analizar_cultivos_web(aoi):
                     vis_params = {'min': 0, 'max': 32, 'palette': paleta_oficial}
                     map_id = capa_combinada.getMapId(vis_params)
                     
-                    # DEBUG: Ver qué contiene map_id
-                    st.info(f"🔍 Generando tiles para {campana}: {type(map_id)}")
+                    # MÉTODO ACTUALIZADO para Earth Engine moderno
+                    st.info(f"🔍 Generando tiles para {campana}")
                     
-                    # Método simplificado - el que debería funcionar
-                    if 'tile_fetcher' in map_id:
-                        tile_fetcher = map_id['tile_fetcher']
-                        if hasattr(tile_fetcher, 'url_template'):
-                            tiles_urls[campana] = tile_fetcher.url_template
-                            st.success(f"✅ Tiles generados para {campana}")
-                        else:
-                            st.warning(f"❌ tile_fetcher sin url_template para {campana}")
+                    # Método 1: tile_fetcher.url_template (atributo)
+                    if 'tile_fetcher' in map_id and hasattr(map_id['tile_fetcher'], 'url_template'):
+                        tiles_urls[campana] = map_id['tile_fetcher'].url_template
+                        st.success(f"✅ Tiles (método 1) para {campana}")
+                    
+                    # Método 2: tile_fetcher['url_template'] (diccionario)  
+                    elif 'tile_fetcher' in map_id and isinstance(map_id['tile_fetcher'], dict) and 'url_template' in map_id['tile_fetcher']:
+                        tiles_urls[campana] = map_id['tile_fetcher']['url_template']
+                        st.success(f"✅ Tiles (método 2) para {campana}")
+                    
+                    # Método 3: urlTemplate directo
                     elif 'urlTemplate' in map_id:
                         tiles_urls[campana] = map_id['urlTemplate']
-                        st.success(f"✅ Tiles (urlTemplate) generados para {campana}")
+                        st.success(f"✅ Tiles (método 3) para {campana}")
+                    
+                    # Método 4: Explorar lo que hay dentro del tile_fetcher
+                    elif 'tile_fetcher' in map_id:
+                        tile_fetcher = map_id['tile_fetcher']
+                        tf_attrs = dir(tile_fetcher) if hasattr(tile_fetcher, '__dict__') else []
+                        tf_keys = list(tile_fetcher.keys()) if isinstance(tile_fetcher, dict) else []
+                        st.warning(f"🔍 tile_fetcher para {campana} - Atributos: {tf_attrs[:5]} | Keys: {tf_keys}")
+                        
+                        # Intentar diferentes nombres de propiedades
+                        for prop_name in ['url_template', 'urlTemplate', 'template', 'url', 'baseUrl']:
+                            if hasattr(tile_fetcher, prop_name):
+                                tiles_urls[campana] = getattr(tile_fetcher, prop_name)
+                                st.success(f"✅ Tiles (prop {prop_name}) para {campana}")
+                                break
+                            elif isinstance(tile_fetcher, dict) and prop_name in tile_fetcher:
+                                tiles_urls[campana] = tile_fetcher[prop_name]
+                                st.success(f"✅ Tiles (key {prop_name}) para {campana}")
+                                break
                     else:
                         keys_disponibles = list(map_id.keys()) if hasattr(map_id, 'keys') else []
-                        st.warning(f"❌ No se generaron tiles para {campana}. Keys: {keys_disponibles}")
+                        st.error(f"❌ No hay tile_fetcher para {campana}. Keys: {keys_disponibles}")
                         
                 except Exception as tile_error:
                     st.warning(f"❌ Error generando tiles para {campana}: {tile_error}")
