@@ -18,6 +18,8 @@ import matplotlib.colors as mcolors
 import io
 import base64
 from datetime import datetime
+import folium
+from streamlit_folium import st_folium
 
 # Configuración de la página
 st.set_page_config(
@@ -520,6 +522,194 @@ def get_download_link(df, filename, link_text):
     href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">{link_text}</a>'
     return href
 
+
+def crear_visor_cultivos_interactivo(aoi, df_resultados):
+    """
+    Crea un visor interactivo de cultivos usando Folium
+    
+    Args:
+        aoi: FeatureCollection de Earth Engine con el área de interés
+        df_resultados: DataFrame con los resultados de análisis de cultivos
+        
+    Returns:
+        folium.Map: Mapa interactivo con capas de cultivos
+    """
+    
+    # Obtener el centro del AOI
+    try:
+        # Obtener bounds del AOI para centrar el mapa
+        aoi_bounds = aoi.geometry().bounds()
+        bounds_info = aoi_bounds.getInfo()
+        
+        # Calcular centro
+        center_lat = (bounds_info["coordinates"][0][1] + bounds_info["coordinates"][0][3]) / 2
+        center_lon = (bounds_info["coordinates"][0][0] + bounds_info["coordinates"][0][2]) / 2
+        
+    except:
+        # Fallback a coordenadas por defecto (Argentina)
+        center_lat, center_lon = -34.0, -60.0
+    
+    # Crear mapa base
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=12,
+        tiles=None  # No añadir capa base por defecto
+    )
+    
+    # Agregar capas base
+    folium.TileLayer(
+        "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        attr="Google Satellite",
+        name="Satelital",
+        control=True
+    ).add_to(m)
+    
+    folium.TileLayer(
+        "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+        attr="Google Hybrid",
+        name="Híbrido",
+        control=True
+    ).add_to(m)
+    
+    folium.TileLayer(
+        "OpenStreetMap",
+        name="Mapa",
+        control=True
+    ).add_to(m)
+    
+    # Colores específicos por cultivo (mismos que en los gráficos)
+    colores_cultivos = {
+        "Maíz": "#0042ff",
+        "Soja 1ra": "#339820", 
+        "Girasol": "#FFFF00",
+        "Girasol-CV": "#FFFF00",
+        "Poroto": "#f022db",
+        "Algodón": "#b7b9bd",
+        "Maní": "#FFA500",
+        "Arroz": "#1d1e33",
+        "Sorgo GR": "#FF0000",
+        "Caña de azúcar": "#a32102",
+        "Caña de Azúcar": "#a32102",
+        "Barbecho": "#646b63",
+        "No agrícola": "#e6f0c2",
+        "No Agrícola": "#e6f0c2",
+        "Papa": "#8A2BE2",
+        "Verdeo de Sorgo": "#800080",
+        "Tabaco": "#D2B48C",
+        "CI-Maíz 2da": "#87CEEB",
+        "CI-Soja 2da": "#90ee90",
+        "Soja 2da": "#90ee90"
+    }
+    
+    # Crear grupos de capas por campaña
+    campanas = sorted(df_resultados["Campaña"].unique())
+    
+    for campana in campanas:
+        # Crear grupo de capa para esta campaña
+        feature_group = folium.FeatureGroup(name=f"Cultivos {campana}")
+        
+        # Filtrar datos de esta campaña
+        df_campana = df_resultados[df_resultados["Campaña"] == campana]
+        
+        # Agrupar por cultivo para crear áreas
+        for cultivo in df_campana["Cultivo"].unique():
+            df_cultivo = df_campana[df_campana["Cultivo"] == cultivo]
+            
+            if df_cultivo["Área (ha)"].sum() > 0:  # Solo mostrar cultivos con área > 0
+                # Obtener color del cultivo
+                color = colores_cultivos.get(cultivo, "#999999")
+                
+                # Crear polígono representativo (usaremos el AOI como base)
+                try:
+                    area_total = df_cultivo["Área (ha)"].sum()
+                    porcentaje = df_cultivo["Porcentaje (%)"].sum()
+                    
+                    # Crear popup con información
+                    popup_html = f"""
+                    <div style="font-family: Arial; width: 200px;">
+                        <h4 style="margin: 0; color: {color};">{cultivo}</h4>
+                        <p style="margin: 5px 0;"><b>Campaña:</b> {campana}</p>
+                        <p style="margin: 5px 0;"><b>Área:</b> {area_total:.1f} ha</p>
+                        <p style="margin: 5px 0;"><b>Porcentaje:</b> {porcentaje:.1f}%</p>
+                    </div>
+                    """
+                    
+                    # Agregar marcador representativo
+                    folium.CircleMarker(
+                        location=[center_lat + (hash(cultivo) % 1000 - 500) * 0.001,
+                                center_lon + (hash(cultivo) % 1000 - 500) * 0.001],
+                        radius=max(5, min(20, area_total / 10)),
+                        popup=folium.Popup(popup_html, max_width=300),
+                        tooltip=f"{cultivo}: {area_total:.1f} ha",
+                        color="black",
+                        weight=1,
+                        fillColor=color,
+                        fillOpacity=0.7
+                    ).add_to(feature_group)
+                    
+                except Exception as e:
+                    st.warning(f"Error agregando {cultivo} al mapa: {e}")
+        
+        # Agregar el grupo de características al mapa
+        feature_group.add_to(m)
+    
+    # Intentar agregar el contorno del AOI
+    try:
+        # Obtener geometría del AOI como GeoJSON
+        aoi_geojson = aoi.getInfo()
+        
+        # Agregar AOI como overlay
+        folium.GeoJson(
+            aoi_geojson,
+            name="Límite del Campo",
+            style_function=lambda x: {
+                "fillColor": "transparent",
+                "color": "red",
+                "weight": 3,
+                "fillOpacity": 0
+            },
+            tooltip="Límite del área analizada"
+        ).add_to(m)
+        
+    except Exception as e:
+        st.warning(f"No se pudo agregar el contorno del campo al mapa: {e}")
+    
+    # Agregar control de capas
+    folium.LayerControl(collapsed=False).add_to(m)
+    
+    # Agregar leyenda personalizada
+    legend_html = """
+    <div style="position: fixed; 
+                bottom: 50px; left: 50px; width: 200px; height: auto; 
+                background-color: white; z-index:9999; font-size:12px;
+                border:2px solid grey; padding: 10px; border-radius: 5px;">
+                
+    <h4 style="margin-top:0;">🌾 Cultivos Detectados</h4>
+    """
+    
+    # Agregar colores de cultivos más comunes a la leyenda
+    cultivos_principales = ["Maíz", "Soja 1ra", "Girasol", "No agrícola"]
+    for cultivo in cultivos_principales:
+        if cultivo in colores_cultivos:
+            color = colores_cultivos[cultivo]
+            legend_html += f"""
+            <div style="margin: 5px 0;">
+                <span style="background-color: {color}; width: 15px; height: 15px; 
+                           display: inline-block; margin-right: 5px; border: 1px solid black;"></span>
+                <span>{cultivo}</span>
+            </div>
+            """
+    
+    legend_html += """
+    <p style="margin: 10px 0 0 0; font-size: 10px; color: #666;">
+        💡 Usa los controles de capas para ver diferentes años
+    </p>
+    </div>
+    """
+    
+    m.get_root().html.add_child(folium.Element(legend_html))
+    
+    return m
 def main():
     with st.sidebar:
         st.header("📋 Información")
@@ -622,9 +812,32 @@ def main():
                         df_display = df_display.rename(columns={'Cultivo_Estandarizado': 'Cultivo'})
                         st.dataframe(df_display, use_container_width=True)
                         
+                        
+                        # ===== VISOR INTERACTIVO DE CULTIVOS =====
+                        st.subheader("🗺️ Visor Interactivo de Cultivos")
+                        st.write("Explora los cultivos detectados en cada campaña usando el mapa interactivo:")
+                        
+                        try:
+                            # Crear visor de cultivos
+                            mapa_cultivos = crear_visor_cultivos_interactivo(aoi, df_cultivos)
+                            
+                            # Mostrar el mapa usando streamlit-folium
+                            map_data = st_folium(mapa_cultivos, width=700, height=500)
+                            
+                            st.info("💡 **Cómo usar el visor:**")
+                            st.write("""
+                            - 🔘 **Capas base**: Cambia entre vista satelital, híbrida o mapa
+                            - 📅 **Cultivos por año**: Activa/desactiva las campañas en el control de capas
+                            - 🖱️ **Click en marcadores**: Ver detalles de área y porcentaje por cultivo
+                            - 🌾 **Colores**: Cada cultivo tiene su color específico (ver leyenda)
+                            """)
+                            
+                        except Exception as e:
+                            st.error(f"Error generando el visor de mapas: {e}")
+                            st.info("El análisis de cultivos se completó exitosamente, pero no se pudo generar el mapa interactivo.")
                         st.subheader("💾 Descargar Resultados")
                         
-                        col1, col2 = st.columns(2)
+                        col1, col2, col3 = st.columns(3)
                         
                         with col1:
                             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -636,6 +849,33 @@ def main():
                             filename_rotacion = f"rotacion_cultivos_{timestamp}.csv"
                             download_link_rotacion = get_download_link(df_display, filename_rotacion, "🔄 Descargar CSV - Rotación de Cultivos")
                             st.markdown(download_link_rotacion, unsafe_allow_html=True)
+                        
+                        with col3:
+                            # Generar código de Earth Engine
+                            codigo_ee = generar_codigo_earth_engine_visor(aoi)
+                            filename_codigo = f"earth_engine_visor_{timestamp}.js"
+                            
+                            # Crear enlace de descarga para el código JS
+                            b64_codigo = base64.b64encode(codigo_ee.encode()).decode()
+                            download_link_codigo = f"""
+                            <a href="data:text/javascript;base64,{b64_codigo}" download="{filename_codigo}">
+                                <button style="
+                                    background-color: #ff6b35;
+                                    border: none;
+                                    color: white;
+                                    padding: 8px 16px;
+                                    text-align: center;
+                                    text-decoration: none;
+                                    display: inline-block;
+                                    font-size: 14px;
+                                    margin: 4px 2px;
+                                    cursor: pointer;
+                                    border-radius: 4px;
+                                ">🗺️ Código Earth Engine</button>
+                            </a>
+                            """
+                            st.markdown(download_link_codigo, unsafe_allow_html=True)
+                            st.caption("�� Úsalo en Google Earth Engine Code Editor")
                         
                         st.subheader("📈 Resumen por Campaña")
                         pivot_summary = df_cultivos.pivot_table(
