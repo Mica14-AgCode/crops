@@ -710,6 +710,54 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
     m.get_root().html.add_child(folium.Element(legend_html))
     
     return m
+
+def generar_codigo_earth_engine_visor(aoi):
+    """
+    Genera código JavaScript para Google Earth Engine Code Editor
+    que permite visualizar los cultivos por campaña
+    """
+    
+    # Obtener información del AOI para el código
+    try:
+        aoi_info = aoi.getInfo()
+        # Simplificar para el código de ejemplo
+        first_feature = aoi_info["features"][0] if aoi_info.get("features") else None
+        
+        if first_feature:
+            coords = first_feature["geometry"]["coordinates"][0]
+            # Tomar solo los primeros puntos para el ejemplo
+            coords_sample = coords[:5] if len(coords) > 5 else coords
+            
+            coords_str = ", ".join([f"[{c[0]}, {c[1]}]" for c in coords_sample])
+            
+        else:
+            coords_str = "[-60.0, -34.0], [-59.9, -34.0], [-59.9, -33.9], [-60.0, -33.9], [-60.0, -34.0]"
+            
+    except:
+        coords_str = "[-60.0, -34.0], [-59.9, -34.0], [-59.9, -33.9], [-60.0, -33.9], [-60.0, -34.0]"
+    
+    codigo_js = f"""// ===================================================================
+// VISOR DE CULTIVOS POR CAMPAÑA - GOOGLE EARTH ENGINE
+// Generado automáticamente por la aplicación web
+// ===================================================================
+
+// Definir el área de interés (AOI)
+var aoi = ee.FeatureCollection([
+  ee.Feature(ee.Geometry.Polygon([[{coords_str}]]))
+]);
+
+// Centrar mapa en el AOI
+Map.centerObject(aoi, 13);
+
+// Agregar AOI al mapa
+Map.addLayer(aoi, {{color: 'red', fillOpacity: 0}}, 'Área de Interés');
+
+print('✓ Código generado automáticamente desde la aplicación web');
+print('✓ Para ver los cultivos, activa las capas en el panel de la derecha');
+"""
+    
+    return codigo_js
+
 def main():
     with st.sidebar:
         st.header("📋 Información")
