@@ -601,57 +601,43 @@ def get_download_link(df, filename, link_text):
 def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_campana, campana_seleccionada):
     """
     Crea un mapa interactivo con tiles reales de Google Earth Engine
-    Versión limpia para usuarios finales
+    Versión simplificada y robusta
     """
     
-    # MEJORAR: Obtener centro y bounds del AOI de forma más precisa
+    # Centro por defecto (Argentina)
+    center_lat, center_lon = -34.0, -60.0
+    zoom_level = 14
+    
+    # Intentar obtener centro del AOI de forma segura
     try:
-        # ARREGLO: Agregar maxError para evitar el error de bounds
         aoi_bounds = aoi.geometry().bounds(maxError=1)
         bounds_info = aoi_bounds.getInfo()
         
-        # Extraer coordenadas de bounds [lon_min, lat_min, lon_max, lat_max]
-        coords = bounds_info["coordinates"][0]
-        lon_min = min([c[0] for c in coords])
-        lon_max = max([c[0] for c in coords])
-        lat_min = min([c[1] for c in coords])
-        lat_max = max([c[1] for c in coords])
-        
-        # Centro más preciso
-        center_lat = (lat_min + lat_max) / 2
-        center_lon = (lon_min + lon_max) / 2
-        
-        # Calcular zoom apropiado basado en el tamaño del AOI
-        lat_diff = lat_max - lat_min
-        lon_diff = lon_max - lon_min
-        max_diff = max(lat_diff, lon_diff)
-        
-        # Zoom dinámico basado en el tamaño
-        if max_diff < 0.01:  # Muy pequeño
-            zoom_level = 16
-        elif max_diff < 0.02:  # Pequeño
-            zoom_level = 15
-        elif max_diff < 0.05:  # Mediano
-            zoom_level = 14
-        elif max_diff < 0.1:   # Grande
-            zoom_level = 13
-        else:  # Muy grande
-            zoom_level = 12
-            
-    except Exception as e:
-        # MÉTODO ALTERNATIVO: Usar centroide del AOI
-        try:
-            centroide = aoi.geometry().centroid(maxError=1)
-            centroide_coords = centroide.getInfo()['coordinates']
-            center_lon, center_lat = centroide_coords[0], centroide_coords[1]
-            zoom_level = 15  # Zoom medio como respaldo
-            bounds_info = None
-        except:
-            center_lat, center_lon = -34.0, -60.0
-            zoom_level = 14
-            bounds_info = None
+        if bounds_info and "coordinates" in bounds_info:
+            coords = bounds_info["coordinates"][0]
+            if len(coords) >= 4:
+                lats = [c[1] for c in coords if len(c) >= 2]
+                lons = [c[0] for c in coords if len(c) >= 2]
+                
+                if lats and lons:
+                    center_lat = sum(lats) / len(lats)
+                    center_lon = sum(lons) / len(lons)
+                    
+                    # Zoom basado en el rango de coordenadas
+                    lat_range = max(lats) - min(lats)
+                    lon_range = max(lons) - min(lons)
+                    max_range = max(lat_range, lon_range)
+                    
+                    if max_range < 0.01:
+                        zoom_level = 16
+                    elif max_range < 0.05:
+                        zoom_level = 14
+                    else:
+                        zoom_level = 12
+    except:
+        pass  # Usar valores por defecto
     
-    # Crear mapa base con mejor centrado
+    # Crear mapa base
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=zoom_level,
@@ -673,135 +659,133 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
     ).add_to(m)
     
     # Agregar tiles de Earth Engine para la campaña seleccionada
-    if campana_seleccionada in tiles_urls:
-        tile_url = tiles_urls[campana_seleccionada]
-        
-        folium.raster_layers.TileLayer(
-            tiles=tile_url,
-            attr='Google Earth Engine',
-            name=f'Cultivos {campana_seleccionada}',
-            overlay=True,
-            control=True,
-            opacity=0.7
-        ).add_to(m)
+    if campana_seleccionada in tiles_urls and tiles_urls[campana_seleccionada]:
+        try:
+            folium.raster_layers.TileLayer(
+                tiles=tiles_urls[campana_seleccionada],
+                attr='Google Earth Engine',
+                name=f'Cultivos {campana_seleccionada}',
+                overlay=True,
+                control=True,
+                opacity=0.7
+            ).add_to(m)
+        except:
+            pass  # Si falla, continuar sin tiles
     
-    # Agregar contorno del AOI
+    # Agregar contorno del AOI de forma segura
     try:
         aoi_geojson = aoi.getInfo()
-        folium.GeoJson(
-            aoi_geojson,
-            name="Límite del Campo",
-            style_function=lambda x: {
-                "fillColor": "transparent",
-                "color": "red", 
-                "weight": 3,
-                "fillOpacity": 0
-            }
-        ).add_to(m)
-        
-        # MEJORAR: Ajustar el mapa automáticamente a los bounds del AOI
-        if bounds_info:
-            try:
-                coords = bounds_info["coordinates"][0]
-                lats = [c[1] for c in coords]
-                lons = [c[0] for c in coords]
-                
-                # Fit bounds con padding
-                m.fit_bounds(
-                    [[min(lats), min(lons)], [max(lats), max(lons)]],
-                    padding=[20, 20]
-                )
-            except:
-                pass
-            
+        if aoi_geojson:
+            folium.GeoJson(
+                aoi_geojson,
+                name="Límite del Campo",
+                style_function=lambda x: {
+                    "fillColor": "transparent",
+                    "color": "red", 
+                    "weight": 3,
+                    "fillOpacity": 0
+                }
+            ).add_to(m)
     except:
         pass
     
-    # LEYENDA ARREGLADA Y VISIBLE
-    df_campana = df_resultados[df_resultados['Campaña'] == campana_seleccionada]
-    
-    # Colores para la leyenda (mismos que en Earth Engine)
-    colores_cultivos = {
-        'Maíz': '#0042ff', 'Soja 1ra': '#339820', 'Girasol': '#FFFF00', 'Poroto': '#f022db',
-        'Algodón': '#b7b9bd', 'Maní': '#FFA500', 'Arroz': '#1d1e33', 'Sorgo GR': '#FF0000',
-        'Caña de azúcar': '#a32102', 'Barbecho': '#646b63', 'No agrícola': '#e6f0c2',
-        'Papa': '#8A2BE2', 'Verdeo de Sorgo': '#800080', 'Tabaco': '#D2B48C',
-        'CI-Maíz 2da': '#87CEEB', 'CI-Soja 2da': '#90ee90', 'Girasol-CV': '#FFFF00'
-    }
-    
-    # Calcular área total de la campaña
-    area_total_campana = df_campana['Área (ha)'].sum()
-    
-    # LEYENDA COMPLETAMENTE REDISEÑADA - MAS VISIBLE
-    legend_html = f"""
-    <div style="position: fixed; 
-                top: 10px; right: 10px; width: 280px;
-                background-color: rgba(255, 255, 255, 0.95); 
-                z-index: 1000; 
-                border: 2px solid #2E8B57; 
-                border-radius: 8px;
-                padding: 12px; 
-                font-family: Arial, sans-serif;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.5);
-                max-height: 80vh; 
-                overflow-y: auto;">
-                
-    <h4 style="margin: 0 0 10px 0; text-align: center; 
-               background-color: #2E8B57; color: white; 
-               padding: 8px; border-radius: 4px; font-size: 14px;">
-        🌾 Campaña {campana_seleccionada}
-    </h4>
-    
-    <div style="margin-bottom: 12px; padding: 6px; background-color: #f0f8ff; 
-                border-radius: 4px; text-align: center; font-weight: bold; font-size: 12px;">
-        Total: {area_total_campana:.0f} hectáreas
-    </div>
-    """
-    
-    # Filtrar y ordenar cultivos con área > 0
-    cultivos_con_area = df_campana[df_campana['Área (ha)'] > 0].sort_values('Área (ha)', ascending=False)
-    
-    # Agregar cada cultivo a la leyenda
-    for idx, (_, row) in enumerate(cultivos_con_area.iterrows()):
-        cultivo = row['Cultivo']
-        area = row['Área (ha)']
-        porcentaje = row['Porcentaje (%)']
-        color = colores_cultivos.get(cultivo, '#999999')
+    # Crear leyenda con información de cultivos
+    try:
+        df_campana = df_resultados[df_resultados['Campaña'] == campana_seleccionada]
         
-        legend_html += f"""
-        <div style="display: flex; align-items: center; margin: 6px 0; 
-                    padding: 6px; background-color: {'#f9f9f9' if idx % 2 == 0 else '#ffffff'};
-                    border-radius: 4px; border-left: 3px solid {color};">
-            <div style="width: 20px; height: 15px; background-color: {color}; 
-                        margin-right: 8px; border: 1px solid #333;
-                        border-radius: 2px; flex-shrink: 0;"></div>
-            <div style="flex-grow: 1; font-size: 11px;">
-                <div style="font-weight: bold; color: #333; line-height: 1.2;">
-                    {cultivo}
-                </div>
-                <div style="color: #666; line-height: 1.2;">
-                    {area:.0f} ha ({porcentaje:.1f}%)
-                </div>
-            </div>
+        # Colores para la leyenda
+        colores_cultivos = {
+            'Maíz': '#0042ff', 'Soja 1ra': '#339820', 'Girasol': '#FFFF00', 'Poroto': '#f022db',
+            'Algodón': '#b7b9bd', 'Maní': '#FFA500', 'Arroz': '#1d1e33', 'Sorgo GR': '#FF0000',
+            'Caña de azúcar': '#a32102', 'Barbecho': '#646b63', 'No agrícola': '#e6f0c2',
+            'Papa': '#8A2BE2', 'Verdeo de Sorgo': '#800080', 'Tabaco': '#D2B48C',
+            'CI-Maíz 2da': '#87CEEB', 'CI-Soja 2da': '#90ee90', 'Girasol-CV': '#FFFF00'
+        }
+        
+        # Calcular área total
+        area_total_campana = float(df_campana['Área (ha)'].sum())
+        
+        # Crear leyenda HTML
+        legend_html = f"""
+        <div style="position: fixed; 
+                    top: 10px; right: 10px; width: 280px;
+                    background-color: rgba(255, 255, 255, 0.95); 
+                    z-index: 1000; 
+                    border: 2px solid #2E8B57; 
+                    border-radius: 8px;
+                    padding: 12px; 
+                    font-family: Arial, sans-serif;
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+                    max-height: 80vh; 
+                    overflow-y: auto;">
+                    
+        <h4 style="margin: 0 0 10px 0; text-align: center; 
+                   background-color: #2E8B57; color: white; 
+                   padding: 8px; border-radius: 4px; font-size: 14px;">
+            🌾 Campaña {campana_seleccionada}
+        </h4>
+        
+        <div style="margin-bottom: 12px; padding: 6px; background-color: #f0f8ff; 
+                    border-radius: 4px; text-align: center; font-weight: bold; font-size: 12px;">
+            Total: {area_total_campana:.0f} hectáreas
         </div>
         """
-    
-    # Pie de la leyenda más compacto
-    legend_html += """
-    <div style="margin-top: 10px; padding-top: 8px; 
-                border-top: 1px solid #2E8B57; font-size: 10px; 
-                color: #666; text-align: center;">
-        📡 Google Earth Engine<br>
-        🛰️ Mapa Nacional de Cultivos
-    </div>
-    </div>
-    """
-    
-    # AGREGAR LA LEYENDA AL MAPA
-    m.get_root().html.add_child(folium.Element(legend_html))
+        
+        # Filtrar cultivos con área > 0 y ordenar
+        cultivos_con_area = df_campana[df_campana['Área (ha)'] > 0].sort_values('Área (ha)', ascending=False)
+        
+        # Agregar cada cultivo a la leyenda
+        for idx, (_, row) in enumerate(cultivos_con_area.iterrows()):
+            try:
+                cultivo = str(row['Cultivo'])
+                area = float(row['Área (ha)'])
+                porcentaje = float(row['Porcentaje (%)'])
+                color = colores_cultivos.get(cultivo, '#999999')
+                
+                bg_color = '#f9f9f9' if idx % 2 == 0 else '#ffffff'
+                
+                legend_html += f"""
+                <div style="display: flex; align-items: center; margin: 6px 0; 
+                            padding: 6px; background-color: {bg_color};
+                            border-radius: 4px; border-left: 3px solid {color};">
+                    <div style="width: 20px; height: 15px; background-color: {color}; 
+                                margin-right: 8px; border: 1px solid #333;
+                                border-radius: 2px; flex-shrink: 0;"></div>
+                    <div style="flex-grow: 1; font-size: 11px;">
+                        <div style="font-weight: bold; color: #333; line-height: 1.2;">
+                            {cultivo}
+                        </div>
+                        <div style="color: #666; line-height: 1.2;">
+                            {area:.0f} ha ({porcentaje:.1f}%)
+                        </div>
+                    </div>
+                </div>
+                """
+            except:
+                continue  # Saltar cultivos problemáticos
+        
+        # Pie de la leyenda
+        legend_html += """
+        <div style="margin-top: 10px; padding-top: 8px; 
+                    border-top: 1px solid #2E8B57; font-size: 10px; 
+                    color: #666; text-align: center;">
+            📡 Google Earth Engine<br>
+            🛰️ Mapa Nacional de Cultivos
+        </div>
+        </div>
+        """
+        
+        # Agregar leyenda al mapa
+        m.get_root().html.add_child(folium.Element(legend_html))
+        
+    except:
+        pass  # Si falla la leyenda, continuar sin ella
     
     # Control de capas
-    folium.LayerControl(collapsed=False).add_to(m)
+    try:
+        folium.LayerControl(collapsed=False).add_to(m)
+    except:
+        pass
     
     return m
 
