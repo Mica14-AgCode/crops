@@ -669,19 +669,49 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         folium.Map: Mapa con tiles de Earth Engine
     """
     
-    # Obtener centro del AOI
+    # MEJORAR: Obtener centro y bounds del AOI de forma más precisa
     try:
         aoi_bounds = aoi.geometry().bounds()
         bounds_info = aoi_bounds.getInfo()
-        center_lat = (bounds_info["coordinates"][0][1] + bounds_info["coordinates"][0][3]) / 2
-        center_lon = (bounds_info["coordinates"][0][0] + bounds_info["coordinates"][0][2]) / 2
-    except:
+        
+        # Extraer coordenadas de bounds [lon_min, lat_min, lon_max, lat_max]
+        coords = bounds_info["coordinates"][0]
+        lon_min = min([c[0] for c in coords])
+        lon_max = max([c[0] for c in coords])
+        lat_min = min([c[1] for c in coords])
+        lat_max = max([c[1] for c in coords])
+        
+        # Centro más preciso
+        center_lat = (lat_min + lat_max) / 2
+        center_lon = (lon_min + lon_max) / 2
+        
+        # Calcular zoom apropiado basado en el tamaño del AOI
+        lat_diff = lat_max - lat_min
+        lon_diff = lon_max - lon_min
+        max_diff = max(lat_diff, lon_diff)
+        
+        # Zoom dinámico basado en el tamaño
+        if max_diff < 0.01:  # Muy pequeño
+            zoom_level = 16
+        elif max_diff < 0.02:  # Pequeño
+            zoom_level = 15
+        elif max_diff < 0.05:  # Mediano
+            zoom_level = 14
+        elif max_diff < 0.1:   # Grande
+            zoom_level = 13
+        else:  # Muy grande
+            zoom_level = 12
+            
+    except Exception as e:
+        st.warning(f"Error calculando bounds del AOI: {e}")
         center_lat, center_lon = -34.0, -60.0
+        zoom_level = 14
+        bounds_info = None
     
-    # Crear mapa base
+    # Crear mapa base con mejor centrado
     m = folium.Map(
         location=[center_lat, center_lon],
-        zoom_start=14,
+        zoom_start=zoom_level,
         tiles=None
     )
     
@@ -725,14 +755,26 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
                 "fillOpacity": 0
             }
         ).add_to(m)
+        
+        # MEJORAR: Ajustar el mapa automáticamente a los bounds del AOI
+        if bounds_info:
+            coords = bounds_info["coordinates"][0]
+            lats = [c[1] for c in coords]
+            lons = [c[0] for c in coords]
+            
+            # Fit bounds con padding
+            m.fit_bounds(
+                [[min(lats), min(lons)], [max(lats), max(lons)]],
+                padding=[20, 20]
+            )
+            
     except Exception as e:
         st.warning(f"No se pudo agregar contorno: {e}")
     
-    # Crear leyenda oficial estilo mapas
+    # MEJORAR: Crear leyenda dinámica más detallada
     df_campana = df_resultados[df_resultados['Campaña'] == campana_seleccionada]
-    cultivos_campana = cultivos_por_campana.get(campana_seleccionada, {})
     
-    # Colores para la leyenda
+    # Colores para la leyenda (mismos que en Earth Engine)
     colores_cultivos = {
         'Maíz': '#0042ff', 'Soja 1ra': '#339820', 'Girasol': '#FFFF00', 'Poroto': '#f022db',
         'Algodón': '#b7b9bd', 'Maní': '#FFA500', 'Arroz': '#1d1e33', 'Sorgo GR': '#FF0000',
@@ -741,48 +783,67 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         'CI-Maíz 2da': '#87CEEB', 'CI-Soja 2da': '#90ee90', 'Girasol-CV': '#a32102'
     }
     
-    # Crear leyenda HTML estilo oficial
+    # Calcular área total de la campaña
+    area_total_campana = df_campana['Área (ha)'].sum()
+    
+    # NUEVA LEYENDA: Como pidió el usuario "Campaña 19-20 Soja 1ra 20Ha (50%)"
     legend_html = f"""
     <div style="position: fixed; 
-                bottom: 50px; right: 50px; width: 280px;
+                top: 80px; right: 20px; width: 320px;
                 background-color: white; z-index:9999; 
-                border: 2px solid #333; border-radius: 8px;
+                border: 3px solid #2E8B57; border-radius: 10px;
                 padding: 15px; font-family: Arial, sans-serif;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.3);">
+                box-shadow: 0 6px 12px rgba(0,0,0,0.4);
+                max-height: 70vh; overflow-y: auto;">
                 
     <h3 style="margin: 0 0 15px 0; text-align: center; 
                background-color: #2E8B57; color: white; 
-               padding: 8px; border-radius: 4px;">
-        Campaña {campana_seleccionada}
+               padding: 10px; border-radius: 6px; font-size: 16px;">
+        🌾 Campaña {campana_seleccionada}
     </h3>
+    
+    <div style="margin-bottom: 15px; padding: 8px; background-color: #f0f8ff; 
+                border-radius: 5px; text-align: center; font-weight: bold;">
+        Área Total: {area_total_campana:.0f} hectáreas
+    </div>
     """
     
-    # Agregar cultivos con área > 0 ordenados por área
+    # Filtrar y ordenar cultivos con área > 0
     cultivos_con_area = df_campana[df_campana['Área (ha)'] > 0].sort_values('Área (ha)', ascending=False)
     
-    for _, row in cultivos_con_area.iterrows():
+    # Agregar cada cultivo a la leyenda con el formato solicitado
+    for idx, (_, row) in enumerate(cultivos_con_area.iterrows()):
         cultivo = row['Cultivo']
         area = row['Área (ha)']
         porcentaje = row['Porcentaje (%)']
         color = colores_cultivos.get(cultivo, '#999999')
         
+        # Formato como pidió: "Campaña 19-20 Soja 1ra 20Ha (50%)"
         legend_html += f"""
-        <div style="display: flex; align-items: center; margin: 8px 0;">
-            <div style="width: 25px; height: 18px; background-color: {color}; 
-                        margin-right: 10px; border: 1px solid #333;
-                        border-radius: 2px;"></div>
-            <span style="font-size: 13px; font-weight: bold;">
-                {cultivo}: {area} ha ({porcentaje}%)
-            </span>
+        <div style="display: flex; align-items: center; margin: 10px 0; 
+                    padding: 8px; background-color: {'#f9f9f9' if idx % 2 == 0 else '#ffffff'};
+                    border-radius: 5px; border-left: 5px solid {color};">
+            <div style="width: 30px; height: 20px; background-color: {color}; 
+                        margin-right: 12px; border: 2px solid #333;
+                        border-radius: 3px; flex-shrink: 0;"></div>
+            <div style="flex-grow: 1;">
+                <div style="font-size: 14px; font-weight: bold; color: #333;">
+                    {cultivo}
+                </div>
+                <div style="font-size: 12px; color: #666; margin-top: 2px;">
+                    {area:.0f} ha ({porcentaje:.1f}%)
+                </div>
+            </div>
         </div>
         """
     
+    # Pie de la leyenda
     legend_html += """
     <div style="margin-top: 15px; padding-top: 10px; 
-                border-top: 1px solid #ccc; font-size: 11px; 
+                border-top: 2px solid #2E8B57; font-size: 11px; 
                 color: #666; text-align: center;">
-        🌾 Mapa Nacional de Cultivos<br>
-        Google Earth Engine
+        📡 Datos: Google Earth Engine<br>
+        🛰️ Clasificación: Mapa Nacional de Cultivos
     </div>
     </div>
     """
