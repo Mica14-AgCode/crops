@@ -713,47 +713,458 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
 
 def generar_codigo_earth_engine_visor(aoi):
     """
-    Genera código JavaScript para Google Earth Engine Code Editor
-    que permite visualizar los cultivos por campaña
+    Genera código JavaScript completo para Google Earth Engine Code Editor
+    que permite visualizar los cultivos por campaña con todas las funcionalidades
     """
     
-    # Obtener información del AOI para el código
+    # Obtener todas las coordenadas del AOI para el código
     try:
         aoi_info = aoi.getInfo()
-        # Simplificar para el código de ejemplo
-        first_feature = aoi_info["features"][0] if aoi_info.get("features") else None
+        features = aoi_info.get("features", [])
         
-        if first_feature:
-            coords = first_feature["geometry"]["coordinates"][0]
-            # Tomar solo los primeros puntos para el ejemplo
-            coords_sample = coords[:5] if len(coords) > 5 else coords
-            
-            coords_str = ", ".join([f"[{c[0]}, {c[1]}]" for c in coords_sample])
-            
-        else:
-            coords_str = "[-60.0, -34.0], [-59.9, -34.0], [-59.9, -33.9], [-60.0, -33.9], [-60.0, -34.0]"
-            
-    except:
-        coords_str = "[-60.0, -34.0], [-59.9, -34.0], [-59.9, -33.9], [-60.0, -33.9], [-60.0, -34.0]"
+        # Construir el código JavaScript para todas las features
+        aoi_features_js = []
+        
+        for i, feature in enumerate(features):
+            geom = feature.get("geometry", {})
+            if geom.get("type") == "Polygon":
+                coords = geom.get("coordinates", [[]])[0]  # Primer anillo
+                coords_str = ", ".join([f"[{c[0]}, {c[1]}]" for c in coords])
+                aoi_features_js.append(f"  ee.Feature(ee.Geometry.Polygon([[{coords_str}]]))")
+        
+        if not aoi_features_js:
+            # Fallback si no hay features válidas
+            aoi_features_js = ["  ee.Feature(ee.Geometry.Polygon([[[-60.0, -34.0], [-59.9, -34.0], [-59.9, -33.9], [-60.0, -33.9], [-60.0, -34.0]]]))"
+        
+        aoi_definition = "var aoi = ee.FeatureCollection([\n" + ",\n".join(aoi_features_js) + "\n]);"
+        
+    except Exception as e:
+        # Fallback en caso de error
+        aoi_definition = """var aoi = ee.FeatureCollection([
+  ee.Feature(ee.Geometry.Polygon([[[-60.0, -34.0], [-59.9, -34.0], [-59.9, -33.9], [-60.0, -33.9], [-60.0, -34.0]]])
+]);"""
     
     codigo_js = f"""// ===================================================================
-// VISOR DE CULTIVOS POR CAMPAÑA - GOOGLE EARTH ENGINE
-// Generado automáticamente por la aplicación web
+// VISOR COMPLETO DE CULTIVOS POR CAMPAÑA - GOOGLE EARTH ENGINE
+// Generado automáticamente por la aplicación web de rotación de cultivos
+// Incluye análisis para campañas 2019-2020 hasta 2023-2024
 // ===================================================================
 
-// Definir el área de interés (AOI)
-var aoi = ee.FeatureCollection([
-  ee.Feature(ee.Geometry.Polygon([[{coords_str}]]))
-]);
+// ===== DEFINICIÓN DEL ÁREA DE INTERÉS (AOI) =====
+{aoi_definition}
 
-// Centrar mapa en el AOI
-Map.centerObject(aoi, 13);
+// ===== CONFIGURACIÓN INICIAL =====
+// Centrar el mapa en el AOI
+Map.centerObject(aoi, 10);
 
-// Agregar AOI al mapa
-Map.addLayer(aoi, {{color: 'red', fillOpacity: 0}}, 'Área de Interés');
+// Agregar el contorno del AOI al mapa
+Map.addLayer(aoi, {{color: 'red', fillOpacity: 0, width: 2}}, 'Área de Interés');
 
-print('✓ Código generado automáticamente desde la aplicación web');
-print('✓ Para ver los cultivos, activa las capas en el panel de la derecha');
+// Calcular el área total del AOI en hectáreas
+var areaTotalAOI = aoi.geometry().transform('EPSG:5345', 1).area(1).divide(10000);
+
+// Calcular el área de cada píxel en metros cuadrados
+var areaPixeles = ee.Image.pixelArea().reproject('EPSG:5345', null, 30);
+
+// Mostrar el área total del AOI en la consola
+print('Área total del AOI (hectáreas):', areaTotalAOI);
+
+// ===== DEFINICIÓN DE PALETAS Y NOMBRES DE CULTIVOS =====
+
+// Paleta de colores unificada para todos los cultivos
+var nuevaPaleta = [
+  '#ffffff', // 0: Blanco (no usado)
+  '#ffffff', // 1: Blanco (no usado)
+  '#ffffff', // 2: Blanco (no usado)
+  '#ffffff', // 3: Blanco (no usado)
+  '#ffffff', // 4: Blanco (no usado)
+  '#ffffff', // 5: Blanco (no usado)
+  '#ffffff', // 6: Blanco (no usado)
+  '#ffffff', // 7: Blanco (no usado)
+  '#ffffff', // 8: Blanco (no usado)
+  '#ffffff', // 9: Blanco (no usado)
+  '#0042ff', // 10: Maíz (Azul)
+  '#339820', // 11: Soja 1ra (Verde)
+  '#FFFF00', // 12: Girasol (Amarillo)
+  '#f022db', // 13: Poroto
+  '#ffffff', // 14: No usado (Caña de Azúcar ahora es ID 19)
+  '#b7b9bd', // 15: Algodón
+  '#FFA500', // 16: Maní (Naranja)
+  '#1d1e33', // 17: Arroz
+  '#FF0000', // 18: Sorgo GR (Rojo)
+  '#a32102', // 19: Caña de Azúcar / Girasol-CV (Rojo oscuro)
+  '#ffffff', // 20: No usado
+  '#646b63', // 21: Barbecho
+  '#e6f0c2', // 22: No agrícola
+  '#612517', // 23: No usado
+  '#94d200', // 24: No usado
+  '#ffffff', // 25: No usado
+  '#8A2BE2', // 26: Papa (Violeta)
+  '#ffffff', // 27: No usado
+  '#800080', // 28: Verdeo de Sorgo (Morado)
+  '#ffffff', // 29: No usado
+  '#D2B48C', // 30: Tabaco (Marrón claro)
+  '#87CEEB', // 31: CI-Maíz 2da (Azul claro/celeste)
+  '#90ee90'  // 32: CI-Soja 2da (Verde claro/fluor)
+];
+
+// Valor máximo para la paleta
+var maxValor = 32;
+
+// Función para calcular áreas y porcentajes con leyenda
+var calcularAreas = function(capa, cultivos, titulo, posicionLeyenda) {{
+  var areasCultivos = [];
+
+  // Calcular áreas y porcentajes
+  Object.keys(cultivos).forEach(function(cultivoId) {{
+    var nombre = cultivos[cultivoId];
+    var color = nuevaPaleta[cultivoId];
+
+    // Si el nombre es "XXX", omitir de la leyenda
+    if (nombre === 'XXX') {{
+      return; // Salir de esta iteración
+    }}
+
+    // Crear máscara para el cultivo
+    var mascaraCultivo = capa.eq(Number(cultivoId));
+
+    // Calcular área del cultivo
+    var areaCultivo = areaPixeles.multiply(mascaraCultivo).reduceRegion({{
+      reducer: ee.Reducer.sum(),
+      geometry: aoi.geometry(),
+      scale: 30, // Resolución de 30 metros
+      maxPixels: 1e13
+    }}).get('area');
+
+    // Convertir a hectáreas y redondear a entero
+    areaCultivo = ee.Number(areaCultivo).divide(10000).round();
+
+    // Calcular porcentaje respecto al AOI
+    var porcentajeCultivo = areaCultivo.divide(areaTotalAOI).multiply(100).round();
+
+    // Añadir a las listas
+    areasCultivos.push({{
+      'Cultivo': nombre,
+      'Área (ha)': areaCultivo,
+      'Porcentaje (%)': porcentajeCultivo,
+      'Color': color
+    }});
+  }});
+
+  // Evaluar las áreas y crear la leyenda
+  ee.List(areasCultivos).evaluate(function(result) {{
+    // Ordenar las áreas de mayor a menor
+    result.sort(function(a, b) {{
+      return b['Área (ha)'] - a['Área (ha)'];
+    }});
+
+    // Crear la leyenda
+    var legend = ui.Panel({{
+      style: {{
+        position: posicionLeyenda,
+        padding: '8px 15px',
+        backgroundColor: 'white',
+        border: '1px solid #ccc'
+      }}
+    }});
+
+    var legendTitle = ui.Label({{
+      value: titulo,
+      style: {{
+        fontWeight: 'bold',
+        fontSize: '18px',
+        margin: '0 0 4px 0',
+        padding: '0'
+      }}
+    }});
+    legend.add(legendTitle);
+
+    // Añadir cada cultivo y su área a la leyenda (solo si el área es >= 1 Ha)
+    result.forEach(function(item) {{
+      var nombre = item['Cultivo'];
+      var area = item['Área (ha)'];
+      var porcentaje = item['Porcentaje (%)'];
+      var color = item['Color'];
+
+      if (area >= 1) {{ // Solo agregar a la leyenda si el área es >= 1 Ha
+        var legendItem = ui.Panel({{
+          widgets: [
+            ui.Label({{
+              style: {{backgroundColor: color, padding: '8px', margin: '0 0 4px 0'}}
+            }}),
+            ui.Label({{
+              value: nombre + ' ' + (area || 0) + ' Ha (' + (porcentaje || 0) + '%)',
+              style: {{margin: '0 0 0 8px'}}
+            }})
+          ],
+          layout: ui.Panel.Layout.flow('horizontal')
+        }});
+
+        legend.add(legendItem);
+      }}
+    }});
+
+    // Añadir la leyenda al mapa
+    Map.add(legend);
+  }});
+}};
+
+// ===== CAMPAÑA 2019-2020 =====
+print('Procesando campaña 2019-2020...');
+
+// Cargar las capas de cultivos
+var inv19 = ee.Image('projects/carbide-kayak-459911-n3/assets/inv19');
+var ver20 = ee.Image('projects/carbide-kayak-459911-n3/assets/ver20');
+
+// Recortar las capas al AOI
+var inv19_aoi = inv19.clip(aoi);
+var ver20_aoi = ver20.clip(aoi);
+
+// Crear capa combinada para 2019-2020
+var nuevaCapa1920 = ee.Image().expression(
+  '(verano == 10 && (invierno == 0 || invierno == 6)) ? 31 : ' + // CI-Maíz
+  '(verano == 11 && (invierno == 0 || invierno == 6)) ? 32 : ' + // CI-Soja
+  '(verano == 10) ? 10 : ' + // Maíz
+  '(verano == 11) ? 11 : ' + // Soja 1ra
+  '(verano == 14) ? 19 : ' + // Caña de azúcar (reasignar ID 14 a 19)
+  '(verano == 19) ? 19 : ' + // Girasol-CV (19)
+  'verano', // Para otros cultivos
+  {{
+    'verano': ver20_aoi,
+    'invierno': inv19_aoi
+  }}
+);
+
+// Nombres de cultivos para 2019-2020
+var nombresNuevaCapa1920 = {{
+  10: 'Maíz',
+  11: 'Soja 1ra',
+  12: 'Girasol',
+  13: 'Poroto',
+  15: 'Algodón',
+  16: 'Maní',
+  17: 'Arroz',
+  18: 'Sorgo GR',
+  19: 'Girasol-CV',
+  21: 'Barbecho',
+  22: 'No agrícola',
+  31: 'CI-Maíz 2da',
+  32: 'CI-Soja 2da'
+}};
+
+// Visualizar la capa 2019-2020
+Map.addLayer(nuevaCapa1920, {{min: 0, max: maxValor, palette: nuevaPaleta, opacity: 0.5}}, 'Cultivos 2019/2020', false);
+
+// ===== CAMPAÑA 2020-2021 =====
+print('Procesando campaña 2020-2021...');
+
+var inv20 = ee.Image('projects/carbide-kayak-459911-n3/assets/inv20');
+var ver21 = ee.Image('projects/carbide-kayak-459911-n3/assets/ver21');
+
+var inv20_aoi = inv20.clip(aoi);
+var ver21_aoi = ver21.clip(aoi);
+
+var nuevaCapa2021 = ee.Image().expression(
+  '(verano == 10 && (invierno == 0 || invierno == 16 || invierno == 24)) ? 31 : ' + // CI-Maíz
+  '(verano == 11 && (invierno == 0 || invierno == 16 || invierno == 24)) ? 32 : ' + // CI-Soja
+  '(verano == 10) ? 10 : ' + // Maíz
+  '(verano == 11) ? 11 : ' + // Soja 1ra
+  '(verano == 14) ? 19 : ' + // Caña de azúcar (reasignar ID 14 a 19)
+  '(verano == 19 || verano == 26) ? verano : ' + // Girasol-CV (19) y Papa (26)
+  'verano', // Para otros cultivos
+  {{
+    'verano': ver21_aoi,
+    'invierno': inv20_aoi
+  }}
+);
+
+var nombresNuevaCapa2021 = {{
+  10: 'Maíz',
+  11: 'Soja 1ra',
+  12: 'Girasol',
+  13: 'Poroto',
+  15: 'Algodón',
+  16: 'Maní',
+  17: 'Arroz',
+  18: 'Sorgo GR',
+  19: 'Girasol-CV',
+  21: 'Barbecho',
+  22: 'No agrícola',
+  26: 'Papa',
+  28: 'Verdeo de Sorgo',
+  31: 'CI-Maíz 2da',
+  32: 'CI-Soja 2da'
+}};
+
+Map.addLayer(nuevaCapa2021, {{min: 0, max: maxValor, palette: nuevaPaleta, opacity: 0.5}}, 'Cultivos 2020/2021', false);
+
+// ===== CAMPAÑA 2021-2022 =====
+print('Procesando campaña 2021-2022...');
+
+var inv21 = ee.Image('projects/carbide-kayak-459911-n3/assets/inv21');
+var ver22 = ee.Image('projects/carbide-kayak-459911-n3/assets/ver22');
+
+var inv21_aoi = inv21.clip(aoi);
+var ver22_aoi = ver22.clip(aoi);
+
+var nuevaCapa2122 = ee.Image().expression(
+  '(verano == 10 && (invierno == 6 || invierno == 16 || invierno == 24)) ? 31 : ' + // CI-Maíz
+  '(verano == 11 && (invierno == 6 || invierno == 16 || invierno == 24)) ? 32 : ' + // CI-Soja
+  '(verano == 10) ? 10 : ' + // Maíz
+  '(verano == 11) ? 11 : ' + // Soja 1ra
+  '(verano == 14) ? 19 : ' + // Caña de azúcar (reasignar ID 14 a 19)
+  '(verano == 19 || verano == 26) ? verano : ' + // Caña (19) y Papa (26)
+  'verano', // Para otros cultivos
+  {{
+    'verano': ver22_aoi,
+    'invierno': inv21_aoi
+  }}
+);
+
+var nombresNuevaCapa2122 = {{
+  10: 'Maíz',
+  11: 'Soja 1ra',
+  12: 'Girasol',
+  13: 'Poroto',
+  15: 'Algodón',
+  16: 'Maní',
+  17: 'Arroz',
+  18: 'Sorgo GR',
+  19: 'Caña de Azúcar',
+  21: 'Barbecho',
+  22: 'No agrícola',
+  26: 'Papa',
+  28: 'Verdeo de Sorgo',
+  31: 'CI-Maíz 2da',
+  32: 'CI-Soja 2da'
+}};
+
+Map.addLayer(nuevaCapa2122, {{min: 0, max: maxValor, palette: nuevaPaleta, opacity: 0.5}}, 'Cultivos 2021/2022', false);
+
+// ===== CAMPAÑA 2022-2023 =====
+print('Procesando campaña 2022-2023...');
+
+var inv22 = ee.Image('projects/carbide-kayak-459911-n3/assets/inv22');
+var ver23 = ee.Image('projects/carbide-kayak-459911-n3/assets/ver23');
+
+var inv22_aoi = inv22.clip(aoi);
+var ver23_aoi = ver23.clip(aoi);
+
+var nuevaCapa2223 = ee.Image().expression(
+  '(verano == 10 && (invierno == 6 || invierno == 16 || invierno == 24)) ? 31 : ' + // CI-Maíz
+  '(verano == 11 && (invierno == 6 || invierno == 16 || invierno == 24)) ? 32 : ' + // CI-Soja
+  '(verano == 10) ? 10 : ' + // Maíz
+  '(verano == 11) ? 11 : ' + // Soja 1ra
+  '(verano == 14) ? 19 : ' + // Caña de azúcar (reasignar ID 14 a 19)
+  '(verano == 19 || verano == 26) ? verano : ' + // Caña (19) y Papa (26)
+  'verano', // Para otros cultivos
+  {{
+    'verano': ver23_aoi,
+    'invierno': inv22_aoi
+  }}
+);
+
+var nombresNuevaCapa2223 = {{
+  10: 'Maíz',
+  11: 'Soja 1ra',
+  12: 'Girasol',
+  13: 'Poroto',
+  15: 'Algodón',
+  16: 'Maní',
+  17: 'Arroz',
+  18: 'Sorgo GR',
+  19: 'Caña de Azúcar',
+  21: 'Barbecho',
+  22: 'No agrícola',
+  26: 'Papa',
+  28: 'Verdeo de Sorgo',
+  30: 'Tabaco',
+  31: 'CI-Maíz 2da',
+  32: 'CI-Soja 2da'
+}};
+
+Map.addLayer(nuevaCapa2223, {{min: 0, max: maxValor, palette: nuevaPaleta, opacity: 0.5}}, 'Cultivos 2022/2023', false);
+
+// ===== CAMPAÑA 2023-2024 =====
+print('Procesando campaña 2023-2024...');
+
+var inv23 = ee.Image('projects/carbide-kayak-459911-n3/assets/inv23');
+var ver24 = ee.Image('projects/carbide-kayak-459911-n3/assets/ver24');
+
+var inv23_aoi = inv23.clip(aoi);
+var ver24_aoi = ver24.clip(aoi);
+
+var nuevaCapa2324 = ee.Image().expression(
+  '(verano == 10 && (invierno == 6 || invierno == 16 || invierno == 24)) ? 31 : ' + // CI-Maíz
+  '(verano == 11 && (invierno == 6 || invierno == 16 || invierno == 24)) ? 32 : ' + // CI-Soja
+  '(verano == 10) ? 10 : ' + // Maíz
+  '(verano == 11) ? 11 : ' + // Soja 1ra
+  '(verano == 14) ? 19 : ' + // Caña de azúcar (reasignar ID 14 a 19)
+  '(verano == 19 || verano == 26) ? verano : ' + // Caña (19) y Papa (26)
+  'verano', // Para otros cultivos
+  {{
+    'verano': ver24_aoi,
+    'invierno': inv23_aoi
+  }}
+);
+
+var nombresNuevaCapa2324 = {{
+  10: 'Maíz',
+  11: 'Soja 1ra',
+  12: 'Girasol',
+  13: 'Poroto',
+  15: 'Algodón',
+  16: 'Maní',
+  17: 'Arroz',
+  18: 'Sorgo GR',
+  19: 'Caña de Azúcar',
+  21: 'Barbecho',
+  22: 'No agrícola',
+  26: 'Papa',
+  28: 'Verdeo de Sorgo',
+  30: 'Tabaco',
+  31: 'CI-Maíz 2da',
+  32: 'CI-Soja 2da'
+}};
+
+Map.addLayer(nuevaCapa2324, {{min: 0, max: maxValor, palette: nuevaPaleta, opacity: 0.5}}, 'Cultivos 2023/2024', true);
+
+// ===== ANÁLISIS DE ÁREAS PARA LA ÚLTIMA CAMPAÑA =====
+// Calcular áreas y porcentajes para la campaña 2023-2024 (la más reciente)
+calcularAreas(nuevaCapa2324, nombresNuevaCapa2324, 'Campaña 23-24', 'bottom-right');
+
+// ===== INSTRUCCIONES Y INFORMACIÓN =====
+print('===================================================================');
+print('🌾 VISOR COMPLETO DE CULTIVOS - TODAS LAS CAMPAÑAS DISPONIBLES');
+print('===================================================================');
+print('');
+print('✅ Capas cargadas exitosamente:');
+print('   • Cultivos 2019/2020');
+print('   • Cultivos 2020/2021');
+print('   • Cultivos 2021/2022');
+print('   • Cultivos 2022/2023');
+print('   • Cultivos 2023/2024 (activada por defecto)');
+print('');
+print('🎛️ INSTRUCCIONES DE USO:');
+print('   1. Usa el panel "Layers" (arriba a la derecha) para activar/desactivar capas');
+print('   2. Solo una campaña visible a la vez para mejor visualización');
+print('   3. La leyenda muestra los cultivos de la campaña 2023-2024');
+print('   4. Usa el zoom para explorar áreas específicas');
+print('');
+print('🎨 CÓDIGO DE COLORES:');
+print('   • Azul: Maíz');
+print('   • Verde: Soja 1ra');  
+print('   • Amarillo: Girasol');
+print('   • Celeste: CI-Maíz 2da (Cultivo de Invierno + Maíz)');
+print('   • Verde claro: CI-Soja 2da (Cultivo de Invierno + Soja)');
+print('   • Beige: No agrícola');
+print('   • Otros colores: Ver leyenda en pantalla');
+print('');
+print('📊 ÁREA TOTAL ANALIZADA:', areaTotalAOI, 'hectáreas');
+print('');
+print('🔗 Código generado automáticamente desde:');
+print('   rotacion.streamlit.app');
+print('===================================================================');
 """
     
     return codigo_js
@@ -923,7 +1334,7 @@ def main():
                             </a>
                             """
                             st.markdown(download_link_codigo, unsafe_allow_html=True)
-                            st.caption("�� Úsalo en Google Earth Engine Code Editor")
+                            st.caption("Úsalo en Google Earth Engine Code Editor")
                         
                         st.subheader("📈 Resumen por Campaña")
                         pivot_summary = df_cultivos.pivot_table(
