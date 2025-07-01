@@ -20,6 +20,7 @@ import base64
 from datetime import datetime
 import folium
 from streamlit_folium import st_folium
+import re
 
 # Configuración de la página
 st.set_page_config(
@@ -1123,9 +1124,17 @@ def main():
             with st.spinner("🔄 Procesando análisis completo..."):
                 # Procesar archivos KMZ
                 todos_los_poligonos = []
+                nombres_archivos = []
+                
                 for uploaded_file in uploaded_files:
                     poligonos = procesar_kmz_uploaded(uploaded_file)
                     todos_los_poligonos.extend(poligonos)
+                    # Extraer nombre sin extensión para usar en descargas
+                    nombre_limpio = uploaded_file.name.replace('.kmz', '').replace('.KMZ', '')
+                    # Limpiar caracteres especiales para nombre de archivo
+                    nombre_limpio = re.sub(r'[^\w\s-]', '', nombre_limpio).strip()
+                    nombre_limpio = re.sub(r'[-\s]+', '_', nombre_limpio)
+                    nombres_archivos.append(nombre_limpio)
                 
                 if not todos_los_poligonos:
                     st.error("❌ No se encontraron polígonos válidos en los archivos")
@@ -1157,7 +1166,8 @@ def main():
                         'tiles_urls': tiles_urls,
                         'cultivos_por_campana': cultivos_por_campana,
                         'aoi': aoi,
-                        'archivo_info': f"{len(uploaded_files)} archivo(s) - {len(todos_los_poligonos)} polígonos"
+                        'archivo_info': f"{len(uploaded_files)} archivo(s) - {len(todos_los_poligonos)} polígonos",
+                        'nombres_archivos': nombres_archivos  # Guardar nombres para descargas
                     }
                     st.session_state.analisis_completado = True
                     st.success("🎉 ¡Análisis completado exitosamente!")
@@ -1245,9 +1255,8 @@ def main():
                         cultivos_por_campana, campana_seleccionada
                     )
                     
-                    # Mostrar el mapa - Responsive height
-                    altura_mapa = 400 if st.container().width < 768 else 500
-                    map_data = st_folium(mapa_tiles, width=None, height=altura_mapa, key="mapa_persistente")
+                    # Mostrar el mapa - Altura fija responsiva
+                    map_data = st_folium(mapa_tiles, width=None, height=500, key="mapa_persistente")
                     
                     st.success("✅ **Mapa con píxeles reales de Google Earth Engine**")
                     
@@ -1265,29 +1274,35 @@ def main():
                     st.warning("⚠️ No hay tiles disponibles para esta campaña")
                     # Fallback al visor anterior
                     mapa_cultivos = crear_visor_cultivos_interactivo(aoi, df_cultivos)
-                    altura_mapa = 400 if st.container().width < 768 else 500
-                    map_data = st_folium(mapa_cultivos, width=None, height=altura_mapa, key="mapa_fallback")
+                    map_data = st_folium(mapa_cultivos, width=None, height=500, key="mapa_fallback")
                 
             except Exception as e:
                 st.error(f"Error generando el mapa: {e}")
                 st.info("El análisis se completó correctamente, pero no se pudo mostrar el mapa con tiles.")
             
-            # DESCARGAS LIMPIAS Y CLARAS
+            # DESCARGAS LIMPIAS Y CLARAS con nombre del archivo
             st.markdown("---")
             st.subheader("💾 Descargar Resultados")
             st.write("Descarga los resultados del análisis en formato CSV:")
+            
+            # Crear nombre base para archivos usando el nombre del KMZ
+            nombres_archivos = datos.get('nombres_archivos', ['analisis'])
+            nombre_base = '_'.join(nombres_archivos) if nombres_archivos else 'analisis'
+            # Limitar longitud del nombre
+            if len(nombre_base) > 50:
+                nombre_base = nombre_base[:50]
             
             col1, col2 = st.columns(2)
             
             with col1:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename_hectareas = f"cultivos_hectareas_{timestamp}.csv"
+                filename_hectareas = f"{nombre_base}_hectareas_{timestamp}.csv"
                 download_link_hectareas = get_download_link(df_cultivos, filename_hectareas, "📊 Descargar CSV - Hectáreas por Cultivo")
                 st.markdown(download_link_hectareas, unsafe_allow_html=True)
                 st.caption("📄 Contiene: Cultivo, Campaña, Área en hectáreas")
             
             with col2:
-                filename_porcentajes = f"cultivos_porcentajes_{timestamp}.csv"
+                filename_porcentajes = f"{nombre_base}_porcentajes_{timestamp}.csv"
                 download_link_porcentajes = get_download_link(df_display, filename_porcentajes, "🔄 Descargar CSV - Porcentajes de Rotación")
                 st.markdown(download_link_porcentajes, unsafe_allow_html=True)
                 st.caption("📄 Contiene: Rotación en porcentajes por campaña")
