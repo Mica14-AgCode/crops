@@ -1090,11 +1090,25 @@ def crear_visor_ee_tiles(aoi, capas_cultivos):
     def get_ee_tile_url(ee_image, vis_params):
         """Genera URL de tiles para una imagen de Earth Engine"""
         try:
+            # Verificar que la imagen tenga datos
+            pixel_count = ee_image.select(0).reduceRegion(
+                reducer=ee.Reducer.count(),
+                geometry=aoi.geometry(),
+                scale=1000,
+                maxPixels=1e6
+            ).getInfo()
+            
+            if not pixel_count or all(v == 0 for v in pixel_count.values()):
+                st.warning(f"No hay datos en la imagen para esta área")
+                return None
+            
+            # Generar tiles
             map_id = ee_image.getMapId(vis_params)
             tile_url_template = map_id['tile_fetcher'].url_format
             return tile_url_template
+            
         except Exception as e:
-            st.warning(f"Error generando tiles: {e}")
+            st.error(f"Error crítico generando tiles: {e}")
             return None
     
     # Paleta de colores para cultivos (misma que Earth Engine)
@@ -1134,8 +1148,8 @@ def crear_visor_ee_tiles(aoi, capas_cultivos):
             tile_url = get_ee_tile_url(capa_recortada, vis_params)
             
             if tile_url:
-                # Agregar como capa de tiles en Folium
-                folium.raster_layers.TileLayer(
+                # Agregar como capa de tiles en Folium (forma correcta)
+                folium.TileLayer(
                     tiles=tile_url,
                     attr=f"Earth Engine - {campana}",
                     name=f"Cultivos {campana}",
