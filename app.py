@@ -340,7 +340,8 @@ def analizar_cultivos_web(aoi):
                     vis_params = {'min': 0, 'max': 32, 'palette': paleta_oficial}
                     map_id = capa_combinada.getMapId(vis_params)
                     tiles_urls[campana] = map_id.get('tile_fetcher').get('url_template')
-                    st.info(f"✅ Tiles generados para campaña {campana}")
+                    # Tiles generados exitosamente
+                    pass
                 except Exception as tile_error:
                     st.warning(f"Error generando tiles para {campana}: {tile_error}")
                 
@@ -403,11 +404,9 @@ def analizar_cultivos_web(aoi):
                 except Exception as e:
                     continue
         
-        status_text.text("Análisis completado!")
+        status_text.text("✅ Análisis completado exitosamente!")
         progress_bar.progress(1.0)
-        time.sleep(1)
-        progress_bar.empty()
-        status_text.empty()
+        time.sleep(0.5)  # Tiempo reducido para que no parezca lento
         
         return pd.DataFrame(resultados_todas_campanas), area_total, tiles_urls, cultivos_por_campana
         
@@ -1001,6 +1000,7 @@ def main():
                 
                 if df_cultivos is not None and not df_cultivos.empty:
                     st.markdown('<div class="results-section">', unsafe_allow_html=True)
+                    st.success("🎉 ¡Análisis completado exitosamente!")
                     st.subheader("📊 Resultados del Análisis")
                     
                     col1, col2, col3, col4 = st.columns(4)
@@ -1042,7 +1042,8 @@ def main():
                             campana_seleccionada = st.selectbox(
                                 "🗓️ Seleccionar Campaña:",
                                 campanas_disponibles,
-                                index=len(campanas_disponibles)-1  # Por defecto la más reciente
+                                index=len(campanas_disponibles)-1,  # Por defecto la más reciente
+                                key="selector_campana"  # Key única para mantener estado
                             )
                         
                         with col_info:
@@ -1087,7 +1088,11 @@ def main():
                         except Exception as e:
                             st.error(f"Error generando el mapa con tiles: {e}")
                             st.info("El análisis se completó correctamente, pero no se pudo mostrar el mapa con tiles.")
+                        
+                        # Separador visual
+                        st.markdown("---")
                         st.subheader("💾 Descargar Resultados")
+                        st.write("Descarga los resultados del análisis en formato CSV:")
                         
                         col1, col2, col3 = st.columns(3)
                         
@@ -1140,6 +1145,11 @@ def main():
                         pivot_summary['Total'] = pivot_summary.sum(axis=1)
                         pivot_filtered = pivot_summary[pivot_summary['Total'] > 0].sort_values('Total', ascending=False)
                         st.dataframe(pivot_filtered, use_container_width=True)
+                        
+                        # Mensaje final de confirmación
+                        st.markdown("---")
+                        st.success("✅ **Todos los resultados están listos y disponibles para descarga**")
+                        st.info("💡 **Tip**: Prueba cambiar la campaña en el mapa para ver la evolución de cultivos por año")
                         
                     st.markdown('</div>', unsafe_allow_html=True)
                     
