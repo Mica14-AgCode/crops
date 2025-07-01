@@ -734,7 +734,7 @@ def generar_codigo_earth_engine_visor(aoi):
         
         if not aoi_features_js:
             # Fallback si no hay features válidas
-            aoi_features_js = ["  ee.Feature(ee.Geometry.Polygon([[[-60.0, -34.0], [-59.9, -34.0], [-59.9, -33.9], [-60.0, -33.9], [-60.0, -34.0]]]))"
+            aoi_features_js = ["  ee.Feature(ee.Geometry.Polygon([[[-60.0, -34.0], [-59.9, -34.0], [-59.9, -33.9], [-60.0, -33.9], [-60.0, -34.0]]]))"]
         
         aoi_definition = "var aoi = ee.FeatureCollection([\n" + ",\n".join(aoi_features_js) + "\n]);"
         
