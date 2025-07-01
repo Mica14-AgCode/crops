@@ -671,7 +671,8 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
     
     # MEJORAR: Obtener centro y bounds del AOI de forma más precisa
     try:
-        aoi_bounds = aoi.geometry().bounds()
+        # ARREGLO: Agregar maxError para evitar el error de bounds
+        aoi_bounds = aoi.geometry().bounds(maxError=1)
         bounds_info = aoi_bounds.getInfo()
         
         # Extraer coordenadas de bounds [lon_min, lat_min, lon_max, lat_max]
@@ -704,9 +705,20 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
             
     except Exception as e:
         st.warning(f"Error calculando bounds del AOI: {e}")
-        center_lat, center_lon = -34.0, -60.0
-        zoom_level = 14
-        bounds_info = None
+        # MÉTODO ALTERNATIVO: Usar centroide del AOI
+        try:
+            st.info("🔄 Usando centroide del AOI como alternativa...")
+            centroide = aoi.geometry().centroid(maxError=1)
+            centroide_coords = centroide.getInfo()['coordinates']
+            center_lon, center_lat = centroide_coords[0], centroide_coords[1]
+            zoom_level = 15  # Zoom medio como respaldo
+            bounds_info = None
+            st.success(f"✅ Mapa centrado en: {center_lat:.4f}, {center_lon:.4f}")
+        except Exception as e2:
+            st.error(f"Error también con centroide: {e2}")
+            center_lat, center_lon = -34.0, -60.0
+            zoom_level = 14
+            bounds_info = None
     
     # Crear mapa base con mejor centrado
     m = folium.Map(
@@ -758,15 +770,19 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         
         # MEJORAR: Ajustar el mapa automáticamente a los bounds del AOI
         if bounds_info:
-            coords = bounds_info["coordinates"][0]
-            lats = [c[1] for c in coords]
-            lons = [c[0] for c in coords]
-            
-            # Fit bounds con padding
-            m.fit_bounds(
-                [[min(lats), min(lons)], [max(lats), max(lons)]],
-                padding=[20, 20]
-            )
+            try:
+                coords = bounds_info["coordinates"][0]
+                lats = [c[1] for c in coords]
+                lons = [c[0] for c in coords]
+                
+                # Fit bounds con padding
+                m.fit_bounds(
+                    [[min(lats), min(lons)], [max(lats), max(lons)]],
+                    padding=[20, 20]
+                )
+                st.success("✅ Mapa ajustado automáticamente a los bounds del AOI")
+            except Exception as fit_error:
+                st.warning(f"Error ajustando bounds: {fit_error}")
             
     except Exception as e:
         st.warning(f"No se pudo agregar contorno: {e}")
