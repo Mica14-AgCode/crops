@@ -98,45 +98,101 @@ def init_earth_engine():
         return False
 
 def extraer_coordenadas_kml(kml_content):
-    """Extrae coordenadas de un archivo KML"""
+    """Extrae coordenadas de un archivo KML - VERSIÓN MEJORADA Y ROBUSTA"""
     poligonos = []
     
     try:
         root = ET.fromstring(kml_content)
-        namespaces = {'kml': 'http://www.opengis.net/kml/2.2'}
-        if root.tag.startswith('{'):
-            namespace = root.tag.split('}')[0] + '}'
-            namespaces['kml'] = namespace[1:-1]
         
-        placemarks = root.findall('.//kml:Placemark', namespaces)
+        # Buscar todos los Placemark sin importar el namespace
+        placemarks = []
+        
+        # Probar múltiples formas de encontrar placemarks
+        for xpath in ['.//Placemark', './/{*}Placemark', './/{http://www.opengis.net/kml/2.2}Placemark', './/{http://earth.google.com/kml/2.2}Placemark']:
+            try:
+                found = root.findall(xpath)
+                if found:
+                    placemarks = found
+                    break
+            except:
+                continue
+        
+        st.info(f"🔍 Encontrados {len(placemarks)} placemarks en el KML")
         
         for i, placemark in enumerate(placemarks):
-            nombre = "Sin nombre"
-            name_elem = placemark.find('.//kml:name', namespaces)
-            if name_elem is not None and name_elem.text:
-                nombre = name_elem.text.strip()
+            nombre = f"Polígono_{i+1}"
             
-            coords_elem = placemark.find('.//kml:Polygon//kml:coordinates', namespaces)
-            if coords_elem is None:
-                coords_elem = placemark.find('.//kml:Point//kml:coordinates', namespaces)
+            # Buscar nombre (múltiples formas)
+            for xpath in ['.//name', './/{*}name', './/{http://www.opengis.net/kml/2.2}name']:
+                try:
+                    name_elem = placemark.find(xpath)
+                    if name_elem is not None and name_elem.text:
+                        nombre = name_elem.text.strip()
+                        break
+                except:
+                    continue
             
-            if coords_elem is not None and coords_elem.text:
-                coords_text = coords_elem.text.strip()
+            # Buscar coordenadas en MÚLTIPLES ubicaciones posibles
+            coords_text = ""
+            
+            # Lista ampliada de posibles rutas para coordenadas
+            posibles_rutas = [
+                './/coordinates',
+                './/{*}coordinates',
+                './/{http://www.opengis.net/kml/2.2}coordinates',
+                './/{http://earth.google.com/kml/2.2}coordinates',
+                './/Polygon//coordinates',
+                './/LinearRing//coordinates',
+                './/Point//coordinates',
+                './/{*}Polygon//{*}coordinates',
+                './/{*}LinearRing//{*}coordinates', 
+                './/{*}Point//{*}coordinates'
+            ]
+            
+            for ruta in posibles_rutas:
+                try:
+                    coords_elem = placemark.find(ruta)
+                    if coords_elem is not None and coords_elem.text:
+                        coords_text = coords_elem.text.strip()
+                        break
+                except:
+                    continue
+            
+            if coords_text:
                 coordenadas = []
                 
-                for coord_line in coords_text.split():
-                    if coord_line.strip():
-                        parts = coord_line.split(',')
+                # Limpiar y normalizar el texto de coordenadas
+                coords_text = coords_text.replace('\n', ' ').replace('\t', ' ').replace('\r', ' ')
+                
+                # Intentar diferentes métodos de parsing
+                coord_strings = []
+                
+                # Método 1: Separar por espacios
+                if ' ' in coords_text:
+                    coord_strings = [s.strip() for s in coords_text.split(' ') if s.strip()]
+                # Método 2: Una sola línea de coordenadas
+                else:
+                    coord_strings = [coords_text.strip()]
+                
+                for coord_str in coord_strings:
+                    if coord_str.strip():
+                        # Separar lon,lat,alt por comas
+                        parts = [p.strip() for p in coord_str.split(',')]
                         if len(parts) >= 2:
                             try:
                                 lon = float(parts[0])
                                 lat = float(parts[1])
-                                coordenadas.append([lon, lat])
-                            except ValueError:
+                                
+                                # Validar rango válido de coordenadas
+                                if -180 <= lon <= 180 and -90 <= lat <= 90:
+                                    coordenadas.append([lon, lat])
+                            except (ValueError, IndexError):
                                 continue
                 
+                # Validar polígono y agregarlo
                 if coordenadas and len(coordenadas) >= 3:  # VALIDACIÓN: Al menos 3 puntos
-                    if len(coordenadas) > 2 and coordenadas[0] != coordenadas[-1]:
+                    # Cerrar polígono si no está cerrado
+                    if coordenadas[0] != coordenadas[-1]:
                         coordenadas.append(coordenadas[0])
                     
                     poligono = {
@@ -145,13 +201,14 @@ def extraer_coordenadas_kml(kml_content):
                         'numero': i + 1
                     }
                     poligonos.append(poligono)
+                    
                 elif coordenadas:
-                    st.warning(f"⚠️ Polígono '{nombre}' omitido: tiene solo {len(coordenadas)} puntos (mínimo 3)")    
+                    st.warning(f"⚠️ Polígono '{nombre}' omitido: tiene solo {len(coordenadas)} puntos (mínimo 3)")
+                
     except Exception as e:
-        st.error(f"Error procesando KML: {e}")
+        st.error(f"❌ Error procesando KML: {e}")
     
     return poligonos
-
 def procesar_kmz_uploaded(uploaded_file):
     """Procesa un archivo KMZ subido a Streamlit"""
     poligonos = []
