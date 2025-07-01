@@ -362,28 +362,44 @@ def analizar_cultivos_web(aoi):
                     elif 'tile_fetcher' in map_id:
                         tile_fetcher = map_id['tile_fetcher']
                         
-                        # Para objetos de EE, necesitamos getInfo() para obtener los datos
+                        # ee.data.TileFetcher necesita métodos específicos
                         try:
-                            tf_info = tile_fetcher.getInfo() if hasattr(tile_fetcher, 'getInfo') else tile_fetcher
-                            st.info(f"🔍 tile_fetcher info para {campana}: {type(tf_info)} - {str(tf_info)[:100]}...")
+                            st.info(f"🔍 tile_fetcher para {campana}: {type(tile_fetcher)}")
                             
-                            # Buscar URL en la información del tile_fetcher
-                            if isinstance(tf_info, dict):
-                                for url_key in ['url_template', 'urlTemplate', 'template', 'url', 'baseUrl']:
-                                    if url_key in tf_info:
-                                        tiles_urls[campana] = tf_info[url_key]
-                                        st.success(f"✅ Tiles encontrados (getInfo.{url_key}) para {campana}")
-                                        break
-                            
-                            # Si no se encontró, intentar acceso directo
+                            # MÉTODO CORRECTO para ee.data.TileFetcher
+                            if hasattr(tile_fetcher, 'url_format'):
+                                # Método 1: url_format directo
+                                url_format = tile_fetcher.url_format
+                                tiles_urls[campana] = url_format
+                                st.success(f"✅ Tiles (url_format) para {campana}: {url_format[:50]}...")
+                                
+                            elif hasattr(tile_fetcher, 'format_url'):
+                                # Método 2: format_url con parámetros de ejemplo
+                                try:
+                                    example_url = tile_fetcher.format_url(x=0, y=0, z=1)
+                                    # Convertir ejemplo a template
+                                    template_url = example_url.replace('/0/0/1', '/{x}/{y}/{z}')
+                                    tiles_urls[campana] = template_url
+                                    st.success(f"✅ Tiles (format_url) para {campana}: {template_url[:50]}...")
+                                except:
+                                    pass
+                                    
+                            # Si no funciona, explorar todas las propiedades
                             if campana not in tiles_urls:
-                                for prop_name in ['url_template', 'urlTemplate', 'template', 'url', 'baseUrl']:
+                                attrs = [attr for attr in dir(tile_fetcher) if not attr.startswith('_')]
+                                st.info(f"🔍 Atributos de TileFetcher: {attrs[:10]}")
+                                
+                                # Probar diferentes propiedades conocidas de TileFetcher
+                                for prop_name in ['url_format', 'urlFormat', 'baseUrl', 'base_url', 'template', 'url_template']:
                                     if hasattr(tile_fetcher, prop_name):
-                                        url_val = getattr(tile_fetcher, prop_name)
-                                        if url_val:
-                                            tiles_urls[campana] = url_val
-                                            st.success(f"✅ Tiles (directo.{prop_name}) para {campana}")
-                                            break
+                                        try:
+                                            prop_val = getattr(tile_fetcher, prop_name)
+                                            if prop_val and isinstance(prop_val, str) and 'http' in prop_val:
+                                                tiles_urls[campana] = prop_val
+                                                st.success(f"✅ Tiles ({prop_name}) para {campana}")
+                                                break
+                                        except:
+                                            continue
                                             
                         except Exception as tf_error:
                             st.warning(f"Error explorando tile_fetcher para {campana}: {tf_error}")
