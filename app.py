@@ -339,11 +339,21 @@ def analizar_cultivos_web(aoi):
                 try:
                     vis_params = {'min': 0, 'max': 32, 'palette': paleta_oficial}
                     map_id = capa_combinada.getMapId(vis_params)
-                    tiles_urls[campana] = map_id.get('tile_fetcher').get('url_template')
-                    # Tiles generados exitosamente
-                    pass
+                    
+                    # Manejo robusto de diferentes versiones de EE
+                    if hasattr(map_id, 'tile_fetcher') and hasattr(map_id.tile_fetcher, 'url_template'):
+                        tiles_urls[campana] = map_id.tile_fetcher.url_template
+                    elif 'tile_fetcher' in map_id and hasattr(map_id['tile_fetcher'], 'url_template'):
+                        tiles_urls[campana] = map_id['tile_fetcher'].url_template
+                    elif 'urlTemplate' in map_id:
+                        tiles_urls[campana] = map_id['urlTemplate']
+                    else:
+                        # Fallback - no usar tiles para esta campaña
+                        pass
+                        
                 except Exception as tile_error:
-                    st.warning(f"Error generando tiles para {campana}: {tile_error}")
+                    # Solo registrar error internamente, sin mostrar al usuario durante análisis
+                    pass
                 
             except Exception as e:
                 st.warning(f"Error cargando campaña {campana}: {e}")
@@ -406,7 +416,7 @@ def analizar_cultivos_web(aoi):
         
         status_text.text("✅ Análisis completado exitosamente!")
         progress_bar.progress(1.0)
-        time.sleep(0.5)  # Tiempo reducido para que no parezca lento
+        # NO borrar los elementos - mantenerlos visibles
         
         return pd.DataFrame(resultados_todas_campanas), area_total, tiles_urls, cultivos_por_campana
         
@@ -970,11 +980,16 @@ def main():
                 st.write(f"📄 {file.name} ({file.size:,} bytes)")
         
         if st.button("🚀 Analizar Cultivos y Rotación", type="primary"):
-            with st.spinner("Procesando archivos KMZ..."):
-                todos_los_poligonos = []
-                for uploaded_file in uploaded_files:
-                    poligonos = procesar_kmz_uploaded(uploaded_file)
-                    todos_los_poligonos.extend(poligonos)
+            # Crear contenedores permanentes que NO se borrarán
+            container_progreso = st.container()
+            container_resultados = st.container()
+            
+            with container_progreso:
+                with st.spinner("Procesando archivos KMZ..."):
+                    todos_los_poligonos = []
+                    for uploaded_file in uploaded_files:
+                        poligonos = procesar_kmz_uploaded(uploaded_file)
+                        todos_los_poligonos.extend(poligonos)
                 
                 if not todos_los_poligonos:
                     st.error("❌ No se encontraron polígonos válidos en los archivos")
@@ -999,159 +1014,164 @@ def main():
                     cultivos_por_campana = {}
                 
                 if df_cultivos is not None and not df_cultivos.empty:
-                    st.markdown('<div class="results-section">', unsafe_allow_html=True)
-                    st.success("🎉 ¡Análisis completado exitosamente!")
-                    st.subheader("📊 Resultados del Análisis")
+                    # Mostrar confirmación en el contenedor de progreso
+                    with container_progreso:
+                        st.success("🎉 ¡Análisis completado exitosamente!")
                     
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Área Total", f"{area_total:.1f} ha")
-                    with col2:
-                        cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
-                        st.metric("Cultivos Detectados", cultivos_detectados)
-                    with col3:
-                        # CORRECCIÓN: Calcular área agrícola PROMEDIO por campaña
-                        area_agricola_por_campana = df_cultivos[~df_cultivos['Cultivo'].str.contains('No agrícola', na=False)].groupby('Campaña')['Área (ha)'].sum()
-                        area_agricola = area_agricola_por_campana.mean()
-                        st.metric("Área Agrícola", f"{area_agricola:.1f} ha", help="Promedio de área agrícola por campaña")
-                    with col4:
-                        porcentaje_agricola = (area_agricola / area_total * 100) if area_total > 0 else 0
-                        st.metric("% Agrícola", f"{porcentaje_agricola:.1f}%", help="Porcentaje promedio de área agrícola")
-                    
-                    fig, df_rotacion = generar_grafico_rotacion_web(df_cultivos)
-                    
-                    if fig is not None:
-                        st.subheader("🎨 Gráfico de Rotación de Cultivos")
-                        st.pyplot(fig)
+                    # Mostrar todos los resultados en el contenedor permanente
+                    with container_resultados:
+                        st.markdown('<div class="results-section">', unsafe_allow_html=True)
+                        st.subheader("📊 Resultados del Análisis")
                         
-                        st.subheader("📋 Tabla de Rotación (%)")
-                        df_display = df_rotacion.copy()
-                        df_display = df_display.rename(columns={'Cultivo_Estandarizado': 'Cultivo'})
-                        st.dataframe(df_display, use_container_width=True)
-                        
-                        
-                        # ===== VISOR INTERACTIVO CON TILES DE EARTH ENGINE =====
-                        st.subheader("🗺️ Mapa Interactivo de Cultivos")
-                        st.write("Explora los píxeles de cultivos reales de Google Earth Engine:")
-                        
-                        # Dropdown para seleccionar campaña
-                        campanas_disponibles = sorted(df_cultivos['Campaña'].unique())
-                        
-                        col_dropdown, col_info = st.columns([1, 2])
-                        with col_dropdown:
-                            campana_seleccionada = st.selectbox(
-                                "🗓️ Seleccionar Campaña:",
-                                campanas_disponibles,
-                                index=len(campanas_disponibles)-1,  # Por defecto la más reciente
-                                key="selector_campana"  # Key única para mantener estado
-                            )
-                        
-                        with col_info:
-                            # Mostrar info de la campaña seleccionada
-                            df_sel = df_cultivos[df_cultivos['Campaña'] == campana_seleccionada]
-                            cultivos_sel = len(df_sel[df_sel['Área (ha)'] > 0])
-                            area_agricola_sel = df_sel[~df_sel['Cultivo'].str.contains('No agrícola', na=False)]['Área (ha)'].sum()
-                            
-                            st.metric(
-                                f"Campaña {campana_seleccionada}", 
-                                f"{area_agricola_sel:.1f} ha agrícolas",
-                                help=f"{cultivos_sel} cultivos detectados"
-                            )
-                        
-                        try:
-                            if tiles_urls and campana_seleccionada in tiles_urls:
-                                # Crear mapa con tiles reales de Earth Engine
-                                mapa_tiles = crear_mapa_con_tiles_engine(
-                                    aoi, tiles_urls, df_cultivos, 
-                                    cultivos_por_campana, campana_seleccionada
-                                )
-                                
-                                # Mostrar el mapa
-                                map_data = st_folium(mapa_tiles, width=700, height=500)
-                                
-                                st.success("✅ **Mapa con píxeles reales de Google Earth Engine**")
-                                st.info("💡 **Cómo usar el mapa:**")
-                                st.write("""
-                                - 🎨 **Píxeles de colores**: Cada color representa un cultivo específico
-                                - 🗓️ **Cambiar campaña**: Usa el dropdown arriba para ver otras años
-                                - 🔍 **Zoom**: Acerca/aleja para ver más detalle
-                                - 📊 **Leyenda**: Área y porcentaje de cada cultivo (esquina inferior derecha)
-                                - 🗺️ **Capas base**: Cambia entre satelital y mapa en el control de capas
-                                """)
-                                
-                            else:
-                                st.warning("⚠️ No hay tiles disponibles para esta campaña")
-                                # Fallback al visor anterior
-                                mapa_cultivos = crear_visor_cultivos_interactivo(aoi, df_cultivos)
-                                map_data = st_folium(mapa_cultivos, width=700, height=500)
-                            
-                        except Exception as e:
-                            st.error(f"Error generando el mapa con tiles: {e}")
-                            st.info("El análisis se completó correctamente, pero no se pudo mostrar el mapa con tiles.")
-                        
-                        # Separador visual
-                        st.markdown("---")
-                        st.subheader("💾 Descargar Resultados")
-                        st.write("Descarga los resultados del análisis en formato CSV:")
-                        
-                        col1, col2, col3 = st.columns(3)
-                        
+                        col1, col2, col3, col4 = st.columns(4)
                         with col1:
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            filename_cultivos = f"cultivos_por_campana_{timestamp}.csv"
-                            download_link_cultivos = get_download_link(df_cultivos, filename_cultivos, "📊 Descargar CSV - Cultivos por Campaña")
-                            st.markdown(download_link_cultivos, unsafe_allow_html=True)
-                        
+                            st.metric("Área Total", f"{area_total:.1f} ha")
                         with col2:
-                            filename_rotacion = f"rotacion_cultivos_{timestamp}.csv"
-                            download_link_rotacion = get_download_link(df_display, filename_rotacion, "🔄 Descargar CSV - Rotación de Cultivos")
-                            st.markdown(download_link_rotacion, unsafe_allow_html=True)
-                        
+                            cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
+                            st.metric("Cultivos Detectados", cultivos_detectados)
                         with col3:
-                            # Generar código de Earth Engine
-                            codigo_ee = generar_codigo_earth_engine_visor(aoi)
-                            filename_codigo = f"earth_engine_visor_{timestamp}.js"
+                            # CORRECCIÓN: Calcular área agrícola PROMEDIO por campaña
+                            area_agricola_por_campana = df_cultivos[~df_cultivos['Cultivo'].str.contains('No agrícola', na=False)].groupby('Campaña')['Área (ha)'].sum()
+                            area_agricola = area_agricola_por_campana.mean()
+                            st.metric("Área Agrícola", f"{area_agricola:.1f} ha", help="Promedio de área agrícola por campaña")
+                        with col4:
+                            porcentaje_agricola = (area_agricola / area_total * 100) if area_total > 0 else 0
+                            st.metric("% Agrícola", f"{porcentaje_agricola:.1f}%", help="Porcentaje promedio de área agrícola")
+                        
+                        fig, df_rotacion = generar_grafico_rotacion_web(df_cultivos)
+                        
+                        if fig is not None:
+                            st.subheader("🎨 Gráfico de Rotación de Cultivos")
+                            st.pyplot(fig)
                             
-                            # Crear enlace de descarga para el código JS
-                            b64_codigo = base64.b64encode(codigo_ee.encode()).decode()
-                            download_link_codigo = f"""
-                            <a href="data:text/javascript;base64,{b64_codigo}" download="{filename_codigo}">
-                                <button style="
-                                    background-color: #ff6b35;
-                                    border: none;
-                                    color: white;
-                                    padding: 8px 16px;
-                                    text-align: center;
-                                    text-decoration: none;
-                                    display: inline-block;
-                                    font-size: 14px;
-                                    margin: 4px 2px;
-                                    cursor: pointer;
-                                    border-radius: 4px;
-                                ">🗺️ Código Earth Engine</button>
-                            </a>
-                            """
-                            st.markdown(download_link_codigo, unsafe_allow_html=True)
-                            st.caption("�� Úsalo en Google Earth Engine Code Editor")
-                        
-                        st.subheader("📈 Resumen por Campaña")
-                        pivot_summary = df_cultivos.pivot_table(
-                            index='Cultivo', 
-                            columns='Campaña', 
-                            values='Área (ha)', 
-                            aggfunc='sum', 
-                            fill_value=0
-                        )
-                        pivot_summary['Total'] = pivot_summary.sum(axis=1)
-                        pivot_filtered = pivot_summary[pivot_summary['Total'] > 0].sort_values('Total', ascending=False)
-                        st.dataframe(pivot_filtered, use_container_width=True)
-                        
-                        # Mensaje final de confirmación
-                        st.markdown("---")
-                        st.success("✅ **Todos los resultados están listos y disponibles para descarga**")
-                        st.info("💡 **Tip**: Prueba cambiar la campaña en el mapa para ver la evolución de cultivos por año")
-                        
-                    st.markdown('</div>', unsafe_allow_html=True)
+                            st.subheader("📋 Tabla de Rotación (%)")
+                            df_display = df_rotacion.copy()
+                            df_display = df_display.rename(columns={'Cultivo_Estandarizado': 'Cultivo'})
+                            st.dataframe(df_display, use_container_width=True)
+                            
+                            
+                            # ===== VISOR INTERACTIVO CON TILES DE EARTH ENGINE =====
+                            st.subheader("🗺️ Mapa Interactivo de Cultivos")
+                            st.write("Explora los píxeles de cultivos reales de Google Earth Engine:")
+                            
+                            # Dropdown para seleccionar campaña
+                            campanas_disponibles = sorted(df_cultivos['Campaña'].unique())
+                            
+                            col_dropdown, col_info = st.columns([1, 2])
+                            with col_dropdown:
+                                campana_seleccionada = st.selectbox(
+                                    "🗓️ Seleccionar Campaña:",
+                                    campanas_disponibles,
+                                    index=len(campanas_disponibles)-1,  # Por defecto la más reciente
+                                    key="selector_campana"  # Key única para mantener estado
+                                )
+                            
+                            with col_info:
+                                # Mostrar info de la campaña seleccionada
+                                df_sel = df_cultivos[df_cultivos['Campaña'] == campana_seleccionada]
+                                cultivos_sel = len(df_sel[df_sel['Área (ha)'] > 0])
+                                area_agricola_sel = df_sel[~df_sel['Cultivo'].str.contains('No agrícola', na=False)]['Área (ha)'].sum()
+                                
+                                st.metric(
+                                    f"Campaña {campana_seleccionada}", 
+                                    f"{area_agricola_sel:.1f} ha agrícolas",
+                                    help=f"{cultivos_sel} cultivos detectados"
+                                )
+                            
+                            try:
+                                if tiles_urls and campana_seleccionada in tiles_urls:
+                                    # Crear mapa con tiles reales de Earth Engine
+                                    mapa_tiles = crear_mapa_con_tiles_engine(
+                                        aoi, tiles_urls, df_cultivos, 
+                                        cultivos_por_campana, campana_seleccionada
+                                    )
+                                    
+                                    # Mostrar el mapa
+                                    map_data = st_folium(mapa_tiles, width=700, height=500)
+                                    
+                                    st.success("✅ **Mapa con píxeles reales de Google Earth Engine**")
+                                    st.info("💡 **Cómo usar el mapa:**")
+                                    st.write("""
+                                    - 🎨 **Píxeles de colores**: Cada color representa un cultivo específico
+                                    - 🗓️ **Cambiar campaña**: Usa el dropdown arriba para ver otras años
+                                    - 🔍 **Zoom**: Acerca/aleja para ver más detalle
+                                    - 📊 **Leyenda**: Área y porcentaje de cada cultivo (esquina inferior derecha)
+                                    - 🗺️ **Capas base**: Cambia entre satelital y mapa en el control de capas
+                                    """)
+                                    
+                                else:
+                                    st.warning("⚠️ No hay tiles disponibles para esta campaña")
+                                    # Fallback al visor anterior
+                                    mapa_cultivos = crear_visor_cultivos_interactivo(aoi, df_cultivos)
+                                    map_data = st_folium(mapa_cultivos, width=700, height=500)
+                                
+                            except Exception as e:
+                                st.error(f"Error generando el mapa con tiles: {e}")
+                                st.info("El análisis se completó correctamente, pero no se pudo mostrar el mapa con tiles.")
+                            
+                            # Separador visual
+                            st.markdown("---")
+                            st.subheader("💾 Descargar Resultados")
+                            st.write("Descarga los resultados del análisis en formato CSV:")
+                            
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                filename_cultivos = f"cultivos_por_campana_{timestamp}.csv"
+                                download_link_cultivos = get_download_link(df_cultivos, filename_cultivos, "📊 Descargar CSV - Cultivos por Campaña")
+                                st.markdown(download_link_cultivos, unsafe_allow_html=True)
+                            
+                            with col2:
+                                filename_rotacion = f"rotacion_cultivos_{timestamp}.csv"
+                                download_link_rotacion = get_download_link(df_display, filename_rotacion, "🔄 Descargar CSV - Rotación de Cultivos")
+                                st.markdown(download_link_rotacion, unsafe_allow_html=True)
+                            
+                            with col3:
+                                # Generar código de Earth Engine
+                                codigo_ee = generar_codigo_earth_engine_visor(aoi)
+                                filename_codigo = f"earth_engine_visor_{timestamp}.js"
+                                
+                                # Crear enlace de descarga para el código JS
+                                b64_codigo = base64.b64encode(codigo_ee.encode()).decode()
+                                download_link_codigo = f"""
+                                <a href="data:text/javascript;base64,{b64_codigo}" download="{filename_codigo}">
+                                    <button style="
+                                        background-color: #ff6b35;
+                                        border: none;
+                                        color: white;
+                                        padding: 8px 16px;
+                                        text-align: center;
+                                        text-decoration: none;
+                                        display: inline-block;
+                                        font-size: 14px;
+                                        margin: 4px 2px;
+                                        cursor: pointer;
+                                        border-radius: 4px;
+                                    ">🗺️ Código Earth Engine</button>
+                                </a>
+                                """
+                                st.markdown(download_link_codigo, unsafe_allow_html=True)
+                                st.caption("📝 Úsalo en Google Earth Engine Code Editor")
+                            
+                            st.subheader("📈 Resumen por Campaña")
+                            pivot_summary = df_cultivos.pivot_table(
+                                index='Cultivo', 
+                                columns='Campaña', 
+                                values='Área (ha)', 
+                                aggfunc='sum', 
+                                fill_value=0
+                            )
+                            pivot_summary['Total'] = pivot_summary.sum(axis=1)
+                            pivot_filtered = pivot_summary[pivot_summary['Total'] > 0].sort_values('Total', ascending=False)
+                            st.dataframe(pivot_filtered, use_container_width=True)
+                            
+                            # Mensaje final de confirmación
+                            st.markdown("---")
+                            st.success("✅ **Todos los resultados están listos y disponibles para descarga**")
+                            st.info("💡 **Tip**: Prueba cambiar la campaña en el mapa para ver la evolución de cultivos por año")
+                            
+                        st.markdown('</div>', unsafe_allow_html=True)
                     
                 else:
                     st.error("❌ No se pudieron analizar los cultivos")
