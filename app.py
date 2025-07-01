@@ -340,20 +340,44 @@ def analizar_cultivos_web(aoi):
                     vis_params = {'min': 0, 'max': 32, 'palette': paleta_oficial}
                     map_id = capa_combinada.getMapId(vis_params)
                     
-                    # Manejo robusto de diferentes versiones de EE
-                    if hasattr(map_id, 'tile_fetcher') and hasattr(map_id.tile_fetcher, 'url_template'):
-                        tiles_urls[campana] = map_id.tile_fetcher.url_template
-                    elif 'tile_fetcher' in map_id and hasattr(map_id['tile_fetcher'], 'url_template'):
-                        tiles_urls[campana] = map_id['tile_fetcher'].url_template
+                    # DEBUG: Ver qué contiene map_id
+                    st.info(f"🔍 Generando tiles para {campana}: {type(map_id)}")
+                    
+                    # Método simplificado - el que debería funcionar
+                    if 'tile_fetcher' in map_id:
+                        tile_fetcher = map_id['tile_fetcher']
+                        if hasattr(tile_fetcher, 'url_template'):
+                            tiles_urls[campana] = tile_fetcher.url_template
+                            st.success(f"✅ Tiles generados para {campana}")
+                        else:
+                            st.warning(f"❌ tile_fetcher sin url_template para {campana}")
                     elif 'urlTemplate' in map_id:
                         tiles_urls[campana] = map_id['urlTemplate']
+                        st.success(f"✅ Tiles (urlTemplate) generados para {campana}")
                     else:
-                        # Fallback - no usar tiles para esta campaña
-                        pass
+                        keys_disponibles = list(map_id.keys()) if hasattr(map_id, 'keys') else []
+                        st.warning(f"❌ No se generaron tiles para {campana}. Keys: {keys_disponibles}")
                         
                 except Exception as tile_error:
-                    # Solo registrar error internamente, sin mostrar al usuario durante análisis
-                    pass
+                    st.warning(f"❌ Error generando tiles para {campana}: {tile_error}")
+                    
+                    # MÉTODO ALTERNATIVO: Usar visualize
+                    try:
+                        st.info(f"🔄 Probando método alternativo para {campana}...")
+                        # Crear una versión simplificada para visualización
+                        vis_image = capa_combinada.visualize(**vis_params)
+                        simple_map_id = vis_image.getMapId({})
+                        
+                        if 'tile_fetcher' in simple_map_id:
+                            tiles_urls[campana] = simple_map_id['tile_fetcher'].url_template
+                            st.success(f"✅ Método alternativo exitoso para {campana}")
+                        else:
+                            st.error(f"❌ Método alternativo también falló para {campana}")
+                            
+                    except Exception as alt_error:
+                        st.error(f"❌ Método alternativo falló para {campana}: {alt_error}")
+                        # Como último recurso, usar el método de fallback
+                        pass
                 
             except Exception as e:
                 st.warning(f"Error cargando campaña {campana}: {e}")
@@ -368,6 +392,17 @@ def analizar_cultivos_web(aoi):
         
         status_text.text("Calculando áreas por cultivo...")
         progress_bar.progress(0.4)
+        
+        # MOSTRAR ESTADO DE TILES GENERADOS
+        tiles_generados = len([c for c in tiles_urls.values() if c])
+        total_campanas = len(campanas)
+        status_text.text(f"Tiles generados: {tiles_generados}/{total_campanas} campañas")
+        
+        if tiles_generados > 0:
+            campanas_con_tiles = [c for c, url in tiles_urls.items() if url]
+            status_text.text(f"✅ Tiles OK: {', '.join(campanas_con_tiles)}")
+        else:
+            status_text.text("⚠️ No se generaron tiles - usando visualización alternativa")
         
         resultados_todas_campanas = []
         area_pixeles = ee.Image.pixelArea().reproject('EPSG:5345', None, 30)
