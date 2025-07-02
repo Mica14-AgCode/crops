@@ -379,6 +379,9 @@ def analizar_cultivos_web(aoi):
                 
                 # 🎨 GENERAR TILES CON PALETA GARANTIZADA
                 try:
+                    # 🔧 FORZAR ERROR PARA DIAGNÓSTICO - TEMPORALMENTE
+                    raise Exception("🔍 FORZANDO USO DEL MÉTODO RGB ALTERNATIVO PARA DIAGNÓSTICO")
+                    
                     # Parámetros optimizados para evitar fallos
                     vis_params = {
                         'min': 0, 
@@ -393,16 +396,16 @@ def analizar_cultivos_web(aoi):
                     # Acceso correcto a tiles
                     if 'tile_fetcher' in map_id and hasattr(map_id['tile_fetcher'], 'url_format'):
                         tiles_urls[campana] = map_id['tile_fetcher'].url_format
-                        print(f"✅ Tiles {campana} con paleta oficial generados")
+                        st.success(f"✅ **Tiles {campana} con paleta oficial generados**")
                     elif 'urlTemplate' in map_id:
                         tiles_urls[campana] = map_id['urlTemplate']
-                        print(f"✅ Tiles {campana} con paleta oficial generados (urlTemplate)")
+                        st.success(f"✅ **Tiles {campana} con paleta oficial generados (urlTemplate)**")
                         
                 except Exception as e:
-                    print(f"⚠️ Método principal falló para {campana}: {e}")
+                    st.warning(f"⚠️ Método principal falló para {campana}: {e}")
                     # 🎨 MÉTODO ALTERNATIVO: CONTROL TOTAL DE COLORES
                     try:
-                        print(f"🔄 Creando mapa RGB con TUS colores exactos para {campana}...")
+                        st.info(f"🔄 **Ejecutando método RGB alternativo para {campana}**")
                         
                         # 🎯 CREAR IMAGEN RGB CON COLORES GARANTIZADOS
                         # Convertir paleta hex a RGB
@@ -434,6 +437,12 @@ def analizar_cultivos_web(aoi):
                             32: hex_to_rgb('#90ee90')   # CI-Soja 2da - Verde claro
                         }
                         
+                        # 🎨 MOSTRAR MAPEO DE COLORES AL USUARIO
+                        with st.expander(f"🎨 Mapeo de colores RGB para {campana}", expanded=False):
+                            for cultivo_id, rgb in colores_rgb_exactos.items():
+                                hex_color = f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+                                st.write(f"ID {cultivo_id}: RGB{rgb} → {hex_color}")
+                        
                         # Construir imagen RGB píxel por píxel con TUS colores
                         for cultivo_id, rgb in colores_rgb_exactos.items():
                             mascara = capa_combinada.eq(cultivo_id)
@@ -446,13 +455,13 @@ def analizar_cultivos_web(aoi):
                         
                         if 'tile_fetcher' in simple_map_id:
                             tiles_urls[campana] = simple_map_id['tile_fetcher'].url_format
-                            print(f"✅ Tiles {campana} generados con COLORES EXACTOS RGB")
+                            st.success(f"✅ **Tiles {campana} generados con COLORES EXACTOS RGB**")
                         elif 'urlTemplate' in simple_map_id:
                             tiles_urls[campana] = simple_map_id['urlTemplate']
-                            print(f"✅ Tiles {campana} generados con COLORES EXACTOS RGB")
+                            st.success(f"✅ **Tiles {campana} generados con COLORES EXACTOS RGB**")
                             
                     except Exception as e2:
-                        print(f"❌ Ambos métodos fallaron para {campana}: {e2}")
+                        st.error(f"❌ **Ambos métodos fallaron para {campana}**: {e2}")
                         pass
                 
             except:
