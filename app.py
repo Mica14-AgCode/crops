@@ -917,18 +917,48 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         except Exception as e:
             pass  # Si falla, continuar sin tiles
     
-    # 🔥 CONTORNO SÚPER VISIBLE - BLANCO Y GRUESO
+    # 🔥 CONTORNO ULTRA VISIBLE - MÉTODO AGRESIVO
     try:
         aoi_geojson = aoi.getInfo()
         if aoi_geojson:
-            # LÍNEA BLANCA SÚPER GRUESA - ÚNICA Y VISIBLE
+            # MÉTODO 1: LÍNEA NEGRA SÚPER GRUESA (base)
             folium.GeoJson(
                 aoi_geojson,
-                name="⚪ Límite del Campo",
+                name="",
                 style_function=lambda x: {
                     "fillColor": "transparent",
-                    "color": "#FFFFFF", 
-                    "weight": 8,  # Súper grueso
+                    "color": "#000000", 
+                    "weight": 15,
+                    "fillOpacity": 0,
+                    "opacity": 1.0,
+                    "lineCap": "round",
+                    "lineJoin": "round"
+                }
+            ).add_to(m)
+            
+            # MÉTODO 2: LÍNEA AMARILLA NEÓN (contraste máximo)
+            folium.GeoJson(
+                aoi_geojson,
+                name="",
+                style_function=lambda x: {
+                    "fillColor": "transparent",
+                    "color": "#FFFF00", 
+                    "weight": 10,
+                    "fillOpacity": 0,
+                    "opacity": 1.0,
+                    "lineCap": "round",
+                    "lineJoin": "round"
+                }
+            ).add_to(m)
+            
+            # MÉTODO 3: LÍNEA ROJA BRILLANTE (núcleo)
+            folium.GeoJson(
+                aoi_geojson,
+                name="🔥 Límite del Campo",
+                style_function=lambda x: {
+                    "fillColor": "transparent",
+                    "color": "#FF0000", 
+                    "weight": 5,
                     "fillOpacity": 0,
                     "opacity": 1.0,
                     "lineCap": "round",
@@ -1313,33 +1343,46 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
         # Agregar el grupo de características al mapa
         feature_group.add_to(m)
     
-    # 🔥 CONTORNOS SÚPER VISIBLES - BLANCO Y GRUESO 
+    # 🔥 CONTORNO ULTRA VISIBLE - MÉTODO AGRESIVO (FALLBACK)
     try:
         # Obtener geometría del AOI como GeoJSON
         aoi_geojson = aoi.getInfo()
         
         if aoi_geojson:
-            # SOMBRA NEGRA (contraste)
+            # LÍNEA NEGRA SÚPER GRUESA (base)
             folium.GeoJson(
                 aoi_geojson,
                 name="",
                 style_function=lambda x: {
                     "fillColor": "transparent",
                     "color": "#000000",
-                    "weight": 12,
+                    "weight": 15,
                     "fillOpacity": 0,
-                    "opacity": 0.8
+                    "opacity": 1.0
                 }
             ).add_to(m)
             
-            # LÍNEA BLANCA SÚPER GRUESA
+            # LÍNEA AMARILLA NEÓN (contraste)
             folium.GeoJson(
                 aoi_geojson,
-                name="⚪ Límite del Campo",
+                name="",
                 style_function=lambda x: {
                     "fillColor": "transparent",
-                    "color": "#FFFFFF",
-                    "weight": 6,
+                    "color": "#FFFF00",
+                    "weight": 10,
+                    "fillOpacity": 0,
+                    "opacity": 1.0
+                }
+            ).add_to(m)
+            
+            # LÍNEA ROJA BRILLANTE (núcleo)
+            folium.GeoJson(
+                aoi_geojson,
+                name="🔥 Límite del Campo",
+                style_function=lambda x: {
+                    "fillColor": "transparent",
+                    "color": "#FF0000",
+                    "weight": 5,
                     "fillOpacity": 0,
                     "opacity": 1.0
                 },
@@ -1387,14 +1430,40 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
     return m
 
 def main():
-    # Configurar página
-    st.title("🌾 Análisis de Rotación de Cultivos")
-    
-    # 🎨 LOGO VISU - Método simple que funciona
-    st.markdown('<div style="text-align: center; padding: 1rem; background: linear-gradient(135deg, #0D0D0D, #1a1a1a); margin-bottom: 2rem; border-radius: 10px;">', unsafe_allow_html=True)
-    st.markdown('<h1 style="color: #E8E8E8; font-size: 3rem; letter-spacing: 15px; margin: 0;">V I S U</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="color: #2DD4BF; font-size: 1rem; letter-spacing: 2px; margin: 0;">VISUALIZE WITH SUPERPOWERS</p>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    # 🎨 LOGO VISU CENTRAL Y PROMINENTE
+    st.markdown("""
+    <div style="text-align: center; padding: 4rem 2rem; 
+                background: linear-gradient(135deg, #0D0D0D, #1a1a1a, #0D0D0D); 
+                margin: -1rem -1rem 3rem -1rem; 
+                border-radius: 0 0 30px 30px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+        
+        <h1 style="color: #FFFFFF; font-size: 5rem; font-weight: 100; 
+                   letter-spacing: 30px; margin: 0 0 1rem 0; 
+                   text-shadow: 0 0 40px rgba(45, 212, 191, 0.8);
+                   font-family: 'Helvetica Neue', Arial, sans-serif;">
+            V I S U
+        </h1>
+        
+        <div style="width: 400px; height: 3px; 
+                    background: linear-gradient(90deg, transparent, #2DD4BF, transparent); 
+                    margin: 0 auto 1.5rem auto; border-radius: 3px;"></div>
+        
+        <p style="color: #2DD4BF; font-size: 1.3rem; font-weight: 300; 
+                  letter-spacing: 4px; margin: 0 0 1rem 0;">
+            VISUALIZE WITH SUPERPOWERS
+        </p>
+        
+        <h2 style="color: #B8BFC7; font-size: 1.8rem; font-weight: 300; 
+                   margin: 2rem 0 0 0;">
+            Análisis de Rotación de Cultivos
+        </h2>
+        
+        <p style="color: #888; font-size: 1rem; margin: 0.5rem 0 0 0;">
+            Sube tus archivos KMZ y obtén análisis detallado
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
     
     # CSS Responsive para móviles
     st.markdown("""
@@ -1493,16 +1562,13 @@ def main():
     
     st.success("✅ Google Earth Engine conectado correctamente")
     
-    st.markdown('<div class="upload-section">', unsafe_allow_html=True)
-    st.subheader("📁 Sube tus archivos KMZ")
-    
+    # Área de upload limpia sin títulos duplicados
     uploaded_files = st.file_uploader(
-        "Selecciona uno o más archivos KMZ",
+        "📁 Selecciona uno o más archivos KMZ",
         type=['kmz'],
         accept_multiple_files=True,
-        help="Puedes subir múltiples archivos KMZ a la vez"
+        help="Puedes subir múltiples archivos KMZ para analizar cultivos y rotación"
     )
-    st.markdown('</div>', unsafe_allow_html=True)
     
     if uploaded_files:
         st.success(f"✅ {len(uploaded_files)} archivo(s) subido(s)")
