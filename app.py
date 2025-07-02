@@ -917,63 +917,18 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         except Exception as e:
             pass  # Si falla, continuar sin tiles
     
-    # 🔥 CONTORNO ULTRA VISIBLE - Múltiples capas para máximo contraste
+    # 🔥 CONTORNO SÚPER VISIBLE - BLANCO Y GRUESO
     try:
         aoi_geojson = aoi.getInfo()
         if aoi_geojson:
-            # 1. SOMBRA NEGRA (base gruesa)
+            # LÍNEA BLANCA SÚPER GRUESA - ÚNICA Y VISIBLE
             folium.GeoJson(
                 aoi_geojson,
-                name="",  # Sin nombre para que no aparezca en capas
-                style_function=lambda x: {
-                    "fillColor": "transparent",
-                    "color": "#000000", 
-                    "weight": 20,
-                    "fillOpacity": 0,
-                    "opacity": 0.8,
-                    "lineCap": "round",
-                    "lineJoin": "round"
-                }
-            ).add_to(m)
-            
-            # 2. LÍNEA BLANCA (contraste)
-            folium.GeoJson(
-                aoi_geojson,
-                name="",  # Sin nombre
+                name="⚪ Límite del Campo",
                 style_function=lambda x: {
                     "fillColor": "transparent",
                     "color": "#FFFFFF", 
-                    "weight": 12,
-                    "fillOpacity": 0,
-                    "opacity": 1.0,
-                    "lineCap": "round",
-                    "lineJoin": "round"
-                }
-            ).add_to(m)
-            
-            # 3. LÍNEA AMARILLA (máximo contraste)
-            folium.GeoJson(
-                aoi_geojson,
-                name="",  # Sin nombre
-                style_function=lambda x: {
-                    "fillColor": "transparent",
-                    "color": "#FFFF00", 
-                    "weight": 6,
-                    "fillOpacity": 0,
-                    "opacity": 1.0,
-                    "lineCap": "round",
-                    "lineJoin": "round"
-                }
-            ).add_to(m)
-            
-            # 4. LÍNEA ROJA (núcleo final) - ÚNICA CON NOMBRE VISIBLE
-            folium.GeoJson(
-                aoi_geojson,
-                name="🔴 Límite del Campo",  # Solo este tiene nombre
-                style_function=lambda x: {
-                    "fillColor": "transparent",
-                    "color": "#FF0000", 
-                    "weight": 2,
+                    "weight": 8,  # Súper grueso
                     "fillOpacity": 0,
                     "opacity": 1.0,
                     "lineCap": "round",
@@ -1417,67 +1372,27 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
     return m
 
 def main():
-    # 🎨 LOGO VISU - Diseño elegante y centrado
+    # 🎨 LOGO VISU - Diseño simple y elegante
     st.markdown("""
-    <div style="display: flex; justify-content: center; align-items: center; 
-                padding: 2rem 0; background: linear-gradient(135deg, #0D0D0D, #1a1a1a); 
+    <div style="text-align: center; padding: 2rem 0; 
+                background: linear-gradient(135deg, #0D0D0D, #1a1a1a); 
                 margin: -1rem -1rem 2rem -1rem; border-radius: 0 0 20px 20px;
                 box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
-        <svg viewBox="0 0 762 380" xmlns="http://www.w3.org/2000/svg" style="width: 400px; height: 200px; max-width: 90vw;">
-          <!-- Dark background like VISU -->
-          <rect width="762" height="380" fill="#0D0D0D"/>
-          
-          <!-- Definitions -->
-          <defs>
-            <!-- Gradient for the line - matching VISU's teal -->
-            <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" style="stop-color:#2DD4BF;stop-opacity:0.3" />
-              <stop offset="40%" style="stop-color:#2DD4BF;stop-opacity:1" />
-              <stop offset="60%" style="stop-color:#2DD4BF;stop-opacity:1" />
-              <stop offset="100%" style="stop-color:#2DD4BF;stop-opacity:0.3" />
-            </linearGradient>
-            
-            <!-- Glow effect for the dot -->
-            <filter id="glow">
-              <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
-              <feMerge>
-                <feMergeNode in="coloredBlur"/>
-                <feMergeNode in="SourceGraphic"/>
-              </feMerge>
-            </filter>
-          </defs>
-          
-          <!-- VISU text with massive letter spacing -->
-          <text x="381" y="160" 
-                font-family="Helvetica Neue, Arial, sans-serif" 
-                font-size="72" 
-                font-weight="200" 
-                letter-spacing="50"
-                text-anchor="middle" 
-                fill="#E8E8E8">VISU</text>
-          
-          <!-- Modern line design with tech element -->
-          <g transform="translate(381, 240)">
-            <!-- Clean continuous line -->
-            <line x1="-300" y1="0" x2="-20" y2="0" stroke="#2DD4BF" stroke-width="2" opacity="0.8"/>
-            <line x1="20" y1="0" x2="300" y2="0" stroke="#2DD4BF" stroke-width="2" opacity="0.8"/>
-            
-            <!-- Tech diamond shape instead of grid -->
-            <g transform="translate(0, 0)">
-              <polygon points="0,-12 12,0 0,12 -12,0" fill="none" stroke="#2DD4BF" stroke-width="2"/>
-              <polygon points="0,-6 6,0 0,6 -6,0" fill="#2DD4BF" opacity="0.7"/>
-            </g>
-          </g>
-          
-          <!-- New tagline -->
-          <text x="381" y="320" 
-                font-family="Helvetica Neue, Arial, sans-serif" 
-                font-size="20" 
-                font-weight="300" 
-                letter-spacing="3"
-                text-anchor="middle" 
-                fill="#B8BFC7">VISUALIZE WITH SUPERPOWERS</text>
-        </svg>
+        
+        <h1 style="color: #E8E8E8; font-family: 'Helvetica Neue', Arial, sans-serif; 
+                   font-size: 4rem; font-weight: 200; letter-spacing: 20px; 
+                   margin: 0; text-shadow: 0 0 20px rgba(45, 212, 191, 0.5);">
+            VISU
+        </h1>
+        
+        <div style="width: 300px; height: 2px; background: linear-gradient(90deg, 
+                    transparent, #2DD4BF, transparent); margin: 1rem auto;"></div>
+        
+        <p style="color: #B8BFC7; font-family: 'Helvetica Neue', Arial, sans-serif; 
+                  font-size: 1.2rem; font-weight: 300; letter-spacing: 3px; 
+                  margin: 1rem 0 0 0;">
+            VISUALIZE WITH SUPERPOWERS
+        </p>
     </div>
     """, unsafe_allow_html=True)
     
