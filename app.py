@@ -384,10 +384,8 @@ def analizar_cultivos_web(aoi):
                     raise Exception("🎯 FORZANDO método RGB que genera colores EXACTOS")
                         
                 except Exception as e:
-                    st.warning(f"⚠️ Método principal falló para {campana}: {e}")
-                    # 🎨 MÉTODO ALTERNATIVO: CONTROL TOTAL DE COLORES
+                    # 🎨 MÉTODO RGB PARA COLORES EXACTOS
                     try:
-                        st.info(f"🔄 **Ejecutando método RGB alternativo para {campana}**")
                         
                         # 🎯 CREAR IMAGEN RGB CON COLORES GARANTIZADOS
                         # Convertir paleta hex a RGB
@@ -420,11 +418,7 @@ def analizar_cultivos_web(aoi):
                             32: hex_to_rgb('#90ee90')   # CI-Soja 2da - Verde claro
                         }
                         
-                        # 🎨 MOSTRAR MAPEO DE COLORES AL USUARIO
-                        with st.expander(f"🎨 Mapeo de colores RGB para {campana}", expanded=False):
-                            for cultivo_id, rgb in colores_rgb_exactos.items():
-                                hex_color = f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
-                                st.write(f"ID {cultivo_id}: RGB{rgb} → {hex_color}")
+                        # Mapeo de colores optimizado
                         
                         # 🔧 CREAR IMAGEN RGB SIMPLIFICADA Y EFICIENTE
                         # Usar el método visualization con parámetros RGB específicos
@@ -473,13 +467,10 @@ def analizar_cultivos_web(aoi):
                         
                         if 'tile_fetcher' in simple_map_id:
                             tiles_urls[campana] = simple_map_id['tile_fetcher'].url_format
-                            st.success(f"✅ **Tiles {campana} generados con COLORES EXACTOS RGB**")
                         elif 'urlTemplate' in simple_map_id:
                             tiles_urls[campana] = simple_map_id['urlTemplate']
-                            st.success(f"✅ **Tiles {campana} generados con COLORES EXACTOS RGB**")
                             
                     except Exception as e2:
-                        st.error(f"❌ **Ambos métodos fallaron para {campana}**: {e2}")
                         pass
                 
             except:
@@ -767,116 +758,226 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
     # Agregar tiles de Earth Engine CON BARRA DESLIZANTE DE TRANSPARENCIA
     if campana_seleccionada in tiles_urls and tiles_urls[campana_seleccionada]:
         try:
-            # Agregar capa principal de cultivos
+            # Agregar capas de cultivos con diferentes transparencias
+            # Capa principal con transparencia media (por si no funciona el control)
             cultivos_layer = folium.raster_layers.TileLayer(
                 tiles=tiles_urls[campana_seleccionada],
                 attr='Google Earth Engine',
-                name=f'Cultivos {campana_seleccionada}',
+                name=f'🌾 Cultivos {campana_seleccionada} (70%)',
                 overlay=True,
                 control=True,
-                opacity=0.7  # Transparencia por defecto
+                opacity=0.7
             )
             cultivos_layer.add_to(m)
             
-            # Agregar barra deslizante de transparencia con CSS mejorado
+            # Capas alternativas con diferentes transparencias
+            folium.raster_layers.TileLayer(
+                tiles=tiles_urls[campana_seleccionada],
+                attr='Google Earth Engine',
+                name=f'🌾 Cultivos {campana_seleccionada} (100%)',
+                overlay=True,
+                control=True,
+                opacity=1.0
+            ).add_to(m)
+            
+            folium.raster_layers.TileLayer(
+                tiles=tiles_urls[campana_seleccionada],
+                attr='Google Earth Engine',
+                name=f'🌾 Cultivos {campana_seleccionada} (50%)',
+                overlay=True,
+                control=True,
+                opacity=0.5
+            ).add_to(m)
+            
+            folium.raster_layers.TileLayer(
+                tiles=tiles_urls[campana_seleccionada],
+                attr='Google Earth Engine',
+                name=f'🌾 Cultivos {campana_seleccionada} (30%)',
+                overlay=True,
+                control=True,
+                opacity=0.3
+            ).add_to(m)
+            
+            # Agregar barra de transparencia ULTRA VISIBLE
             transparency_control = """
-            <div id="transparency-control" style="position: fixed; bottom: 20px; left: 20px; 
-                                                 background: rgba(255, 255, 255, 0.95); 
-                                                 padding: 15px; border-radius: 10px;
-                                                 box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-                                                 z-index: 9998; font-family: Arial, sans-serif;
-                                                 min-width: 200px;">
-                <div style="margin-bottom: 8px; font-weight: bold; color: #2E8B57; text-align: center;">
-                    🎨 Transparencia de Cultivos
+            <div id="transparency-control" style="
+                position: fixed !important; 
+                bottom: 30px !important; 
+                left: 30px !important; 
+                background: rgba(255, 255, 255, 0.98) !important; 
+                padding: 20px !important; 
+                border-radius: 15px !important;
+                box-shadow: 0 8px 25px rgba(0,0,0,0.5) !important;
+                z-index: 99999 !important; 
+                font-family: Arial, sans-serif !important;
+                min-width: 250px !important;
+                border: 3px solid #2E8B57 !important;
+                backdrop-filter: blur(5px) !important;">
+                
+                <div style="margin-bottom: 12px !important; font-weight: bold !important; 
+                           color: #2E8B57 !important; text-align: center !important; 
+                           font-size: 14px !important; text-shadow: 1px 1px 2px rgba(0,0,0,0.1) !important;">
+                    🎨 Control de Transparencia
                 </div>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 12px; color: #666;">👁️</span>
+                
+                <div style="display: flex !important; align-items: center !important; gap: 15px !important;">
+                    <span style="font-size: 14px !important; color: #666 !important;">👁️</span>
                     <input type="range" id="opacity-slider" min="0" max="100" value="70" 
-                           style="flex: 1; height: 6px; border-radius: 5px; 
-                                  background: linear-gradient(to right, #e0e0e0, #2E8B57);
-                                  outline: none; cursor: pointer;">
-                    <span style="font-size: 12px; color: #666;">🎯</span>
+                           style="flex: 1 !important; height: 8px !important; border-radius: 10px !important; 
+                                  background: linear-gradient(to right, #ff6b6b, #4ecdc4, #45b7d1) !important;
+                                  outline: none !important; cursor: pointer !important;
+                                  -webkit-appearance: none !important; appearance: none !important;">
+                    <span style="font-size: 14px !important; color: #666 !important;">🌾</span>
                 </div>
-                <div style="text-align: center; margin-top: 5px; font-size: 11px; color: #888;">
-                    <span id="opacity-value">70%</span>
+                
+                <div style="text-align: center !important; margin-top: 8px !important; 
+                           font-size: 13px !important; color: #2E8B57 !important; font-weight: bold !important;">
+                    <span id="opacity-value">70%</span> Opacidad
+                </div>
+                
+                <div style="text-align: center !important; margin-top: 5px !important; 
+                           font-size: 10px !important; color: #888 !important;">
+                    Desliza para ajustar transparencia
                 </div>
             </div>
             
+            <style>
+            #opacity-slider::-webkit-slider-thumb {
+                appearance: none !important;
+                width: 25px !important;
+                height: 25px !important;
+                border-radius: 50% !important;
+                background: #2E8B57 !important;
+                cursor: pointer !important;
+                border: 3px solid white !important;
+                box-shadow: 0 3px 8px rgba(0,0,0,0.3) !important;
+            }
+            
+            #opacity-slider::-moz-range-thumb {
+                width: 25px !important;
+                height: 25px !important;
+                border-radius: 50% !important;
+                background: #2E8B57 !important;
+                cursor: pointer !important;
+                border: 3px solid white !important;
+                box-shadow: 0 3px 8px rgba(0,0,0,0.3) !important;
+            }
+            </style>
+            
             <script>
-            document.addEventListener('DOMContentLoaded', function() {
+            // Función de transparencia mejorada
+            setTimeout(function() {
                 var slider = document.getElementById('opacity-slider');
                 var valueDisplay = document.getElementById('opacity-value');
+                
+                console.log('Inicializando control de transparencia...');
                 
                 if (slider && valueDisplay) {
                     slider.addEventListener('input', function() {
                         var opacity = this.value / 100;
                         valueDisplay.textContent = this.value + '%';
                         
-                        // Buscar y actualizar la capa de cultivos
-                        var layers = window.map._layers;
-                        Object.keys(layers).forEach(function(key) {
-                            var layer = layers[key];
-                            if (layer.options && layer.options.attribution === 'Google Earth Engine') {
-                                layer.setOpacity(opacity);
+                        console.log('Cambiando opacidad a:', opacity);
+                        
+                        // Método 1: Buscar por atribución Earth Engine
+                        if (window.map && window.map._layers) {
+                            Object.values(window.map._layers).forEach(function(layer) {
+                                if (layer.options && 
+                                    (layer.options.attribution === 'Google Earth Engine' ||
+                                     layer.options.name && layer.options.name.includes('Cultivos'))) {
+                                    if (layer.setOpacity) {
+                                        layer.setOpacity(opacity);
+                                        console.log('Opacidad aplicada a:', layer.options.name);
+                                    }
+                                }
+                            });
+                        }
+                        
+                        // Método 2: Buscar por clase CSS
+                        var leafletLayers = document.querySelectorAll('.leaflet-tile-pane .leaflet-layer');
+                        leafletLayers.forEach(function(layer, index) {
+                            if (index > 0) { // Saltar capa base
+                                layer.style.opacity = opacity;
                             }
                         });
                     });
+                    
+                    console.log('Control de transparencia configurado correctamente');
+                } else {
+                    console.log('Error: No se encontraron elementos de control');
                 }
-            });
+            }, 2000);
             </script>
             """
             m.get_root().html.add_child(folium.Element(transparency_control))
             
         except Exception as e:
-            st.warning(f"Error agregando tiles: {e}")
             pass  # Si falla, continuar sin tiles
     
-    # 🔥 CONTORNO SÚPER VISIBLE - Línea blanca gruesa + sombra
+    # 🔥 CONTORNO ULTRA VISIBLE - Múltiples capas para máximo contraste
     try:
         aoi_geojson = aoi.getInfo()
         if aoi_geojson:
-            # Sombra negra más gruesa para crear contraste
+            # 1. SOMBRA NEGRA SÚPER GRUESA (fondo)
             folium.GeoJson(
                 aoi_geojson,
-                name="Sombra del Campo",
+                name="Sombra Exterior",
                 style_function=lambda x: {
                     "fillColor": "transparent",
-                    "color": "black", 
-                    "weight": 10,  # Sombra más gruesa
+                    "color": "#000000", 
+                    "weight": 20,  # SÚPER gruesa
                     "fillOpacity": 0,
-                    "opacity": 0.6,
-                    "dashArray": "15, 8"
+                    "opacity": 0.8,
+                    "lineCap": "round",
+                    "lineJoin": "round"
                 }
             ).add_to(m)
             
-            # Línea blanca principal SÚPER GRUESA
+            # 2. LÍNEA AMARILLA NEÓN (contraste máximo)
+            folium.GeoJson(
+                aoi_geojson,
+                name="Contorno Neón",
+                style_function=lambda x: {
+                    "fillColor": "transparent",
+                    "color": "#FFFF00", 
+                    "weight": 12,  # Muy gruesa
+                    "fillOpacity": 0,
+                    "opacity": 1.0,
+                    "lineCap": "round",
+                    "lineJoin": "round"
+                }
+            ).add_to(m)
+            
+            # 3. LÍNEA ROJA SÓLIDA (interior)
             folium.GeoJson(
                 aoi_geojson,
                 name="Límite Principal",
                 style_function=lambda x: {
                     "fillColor": "transparent",
-                    "color": "white", 
-                    "weight": 8,  # Aún más gruesa
+                    "color": "#FF0000", 
+                    "weight": 6,  # Línea sólida
                     "fillOpacity": 0,
-                    "opacity": 1.0,  # Máxima opacidad
-                    "dashArray": "12, 6"  # Línea punteada más visible
+                    "opacity": 1.0,
+                    "lineCap": "round",
+                    "lineJoin": "round"
                 }
             ).add_to(m)
             
-            # Línea roja interior para máximo contraste
+            # 4. LÍNEA BLANCA CENTRAL (núcleo)
             folium.GeoJson(
                 aoi_geojson,
-                name="Contorno Interior",
+                name="Núcleo Blanco",
                 style_function=lambda x: {
                     "fillColor": "transparent",
-                    "color": "#FF0000", 
-                    "weight": 4,  # Línea roja más gruesa
+                    "color": "#FFFFFF", 
+                    "weight": 2,  # Línea fina central
                     "fillOpacity": 0,
-                    "opacity": 1.0  # Máxima opacidad
+                    "opacity": 1.0,
+                    "lineCap": "round",
+                    "lineJoin": "round"
                 }
             ).add_to(m)
     except Exception as e:
-        st.warning(f"Error agregando contorno del campo: {e}")
         pass
     
     # Crear leyenda con información de cultivos
