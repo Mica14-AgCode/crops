@@ -540,30 +540,35 @@ def generar_grafico_rotacion_web(df_resultados):
             df_rotacion_final = ajustar_a_100(df_rotacion_final, col)
         
         colores_cultivos = {
-            'Maíz': '#0042ff',           # ID 10 - Azul
-            'Soja 1ra': '#339820',       # ID 11 - Verde
-            'Girasol': '#FFFF00',        # ID 12 - Amarillo (CORREGIDO)
-            'Poroto': '#f022db',         # ID 13 - Rosa/Fucsia
-            'Caña de azúcar': '#a32102', # ID 19 - Rojo oscuro
-            'Caña de Azúcar': '#a32102', # ID 19 - Rojo oscuro (variante)
-            'Algodón': '#b7b9bd',        # ID 15 - Gris claro
-            'Maní': '#FFA500',           # ID 16 - Naranja (CORREGIDO)
-            'Arroz': '#1d1e33',          # ID 17 - Azul oscuro
-            'Sorgo GR': '#FF0000',       # ID 18 - Rojo (CORREGIDO)
-            'Girasol-CV': '#FFFF00',     # ID 19 - Amarillo (CORREGIDO)
-            'Barbecho': '#646b63',       # ID 21 - Gris oscuro
-            'No agrícola': '#e6f0c2',    # ID 22 - Beige claro
-            'No Agrícola': '#e6f0c2',    # ID 22 - Beige claro (variante)
-            'Papa': '#8A2BE2',           # ID 26 - Violeta (CORREGIDO)
-            'Verdeo de Sorgo': '#800080', # ID 28 - Morado
-            'Tabaco': '#D2B48C',         # ID 30 - Marrón claro (CORREGIDO)
-            'CI-Maíz': '#87CEEB',        # ID 31 - Azul claro/celeste (CORREGIDO)
-            'CI-Maíz 2da': '#87CEEB',    # ID 31 - Azul claro/celeste (CORREGIDO)
-            'C inv - Maíz 2da': '#87CEEB', # ID 31 - Azul claro/celeste (CORREGIDO)
-            'CI-Soja': '#90ee90',        # ID 32 - Verde claro/fluor
-            'CI-Soja 2da': '#90ee90',    # ID 32 - Verde claro/fluor
-            'C inv - Soja 2da': '#90ee90', # ID 32 - Verde claro/fluor
-            'Soja 2da': '#90ee90'        # ID 32 - Verde claro/fluor
+            # Cultivos con ID fijo en todas las campañas
+            "Maíz": "#0042ff",           # ID 10 - Azul
+            "Soja 1ra": "#339820",       # ID 11 - Verde  
+            "Girasol": "#FFFF00",        # ID 12 - Amarillo
+            "Poroto": "#f022db",         # ID 13 - Rosa/Fucsia
+            "Algodón": "#b7b9bd",        # ID 15 - Gris claro
+            "Maní": "#FFA500",           # ID 16 - Naranja
+            "Arroz": "#1d1e33",          # ID 17 - Azul oscuro
+            "Sorgo GR": "#FF0000",       # ID 18 - Rojo
+            "Barbecho": "#646b63",       # ID 21 - Gris oscuro
+            "No agrícola": "#e6f0c2",    # ID 22 - Beige claro
+            "No Agrícola": "#e6f0c2",    # ID 22 - Beige claro
+            "Papa": "#8A2BE2",           # ID 26 - Violeta
+            "Verdeo de Sorgo": "#800080", # ID 28 - Morado
+            "Tabaco": "#D2B48C",         # ID 30 - Marrón claro
+            "CI-Maíz 2da": "#87CEEB",    # ID 31 - Azul claro/celeste
+            "CI-Soja 2da": "#90ee90",    # ID 32 - Verde claro/fluor
+            "Soja 2da": "#90ee90",       # ID 32 - Verde claro/fluor
+            
+            # Cultivos que CAMBIAN de ID según campaña - TODOS usan ID 19 → color #a32102
+            "Girasol-CV": "#a32102",     # ID 19 en campañas 19-20, 20-21 - Rojo oscuro
+            "Caña de azúcar": "#a32102", # ID 19 en campañas 21-22, 22-23, 23-24 - Rojo oscuro
+            "Caña de Azúcar": "#a32102", # ID 19 en campañas 21-22, 22-23, 23-24 - Rojo oscuro
+            
+            # Variantes de nombres que pueden aparecer
+            "CI-Maíz": "#87CEEB",        # Variante de CI-Maíz 2da
+            "C inv - Maíz 2da": "#87CEEB", # Variante de CI-Maíz 2da
+            "CI-Soja": "#90ee90",        # Variante de CI-Soja 2da
+            "C inv - Soja 2da": "#90ee90"  # Variante de CI-Soja 2da
         }
         
         color_default = '#999999'
@@ -716,23 +721,35 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         if not df_campana.empty:
             # Colores para la leyenda - EXACTOS de la paleta oficial JavaScript
             colores_cultivos = {
-                'Maíz': '#0042ff',           # ID 10 - Azul
-                'Soja 1ra': '#339820',       # ID 11 - Verde
-                'Girasol': '#FFFF00',        # ID 12 - Amarillo (CORREGIDO)
-                'Poroto': '#f022db',         # ID 13 - Rosa/Fucsia
-                'Caña de azúcar': '#a32102', # ID 19 - Rojo oscuro
-                'Algodón': '#b7b9bd',        # ID 15 - Gris claro
-                'Maní': '#FFA500',           # ID 16 - Naranja (CORREGIDO)
-                'Arroz': '#1d1e33',          # ID 17 - Azul oscuro
-                'Sorgo GR': '#FF0000',       # ID 18 - Rojo (CORREGIDO)
-                'Girasol-CV': '#FFFF00',     # ID 19 - Amarillo (CORREGIDO)
-                'Barbecho': '#646b63',       # ID 21 - Gris oscuro
-                'No agrícola': '#e6f0c2',    # ID 22 - Beige claro
-                'Papa': '#8A2BE2',           # ID 26 - Violeta (CORREGIDO)
-                'Verdeo de Sorgo': '#800080', # ID 28 - Morado
-                'Tabaco': '#D2B48C',         # ID 30 - Marrón claro (CORREGIDO)
-                'CI-Maíz 2da': '#87CEEB',    # ID 31 - Azul claro/celeste (CORREGIDO)
-                'CI-Soja 2da': '#90ee90'     # ID 32 - Verde claro/fluor
+                # Cultivos con ID fijo en todas las campañas
+                "Maíz": "#0042ff",           # ID 10 - Azul
+                "Soja 1ra": "#339820",       # ID 11 - Verde  
+                "Girasol": "#FFFF00",        # ID 12 - Amarillo
+                "Poroto": "#f022db",         # ID 13 - Rosa/Fucsia
+                "Algodón": "#b7b9bd",        # ID 15 - Gris claro
+                "Maní": "#FFA500",           # ID 16 - Naranja
+                "Arroz": "#1d1e33",          # ID 17 - Azul oscuro
+                "Sorgo GR": "#FF0000",       # ID 18 - Rojo
+                "Barbecho": "#646b63",       # ID 21 - Gris oscuro
+                "No agrícola": "#e6f0c2",    # ID 22 - Beige claro
+                "No Agrícola": "#e6f0c2",    # ID 22 - Beige claro
+                "Papa": "#8A2BE2",           # ID 26 - Violeta
+                "Verdeo de Sorgo": "#800080", # ID 28 - Morado
+                "Tabaco": "#D2B48C",         # ID 30 - Marrón claro
+                "CI-Maíz 2da": "#87CEEB",    # ID 31 - Azul claro/celeste
+                "CI-Soja 2da": "#90ee90",    # ID 32 - Verde claro/fluor
+                "Soja 2da": "#90ee90",       # ID 32 - Verde claro/fluor
+                
+                # Cultivos que CAMBIAN de ID según campaña - TODOS usan ID 19 → color #a32102
+                "Girasol-CV": "#a32102",     # ID 19 en campañas 19-20, 20-21 - Rojo oscuro
+                "Caña de azúcar": "#a32102", # ID 19 en campañas 21-22, 22-23, 23-24 - Rojo oscuro
+                "Caña de Azúcar": "#a32102", # ID 19 en campañas 21-22, 22-23, 23-24 - Rojo oscuro
+                
+                # Variantes de nombres que pueden aparecer
+                "CI-Maíz": "#87CEEB",        # Variante de CI-Maíz 2da
+                "C inv - Maíz 2da": "#87CEEB", # Variante de CI-Maíz 2da
+                "CI-Soja": "#90ee90",        # Variante de CI-Soja 2da
+                "C inv - Soja 2da": "#90ee90"  # Variante de CI-Soja 2da
             }
             
             # Calcular área total
@@ -910,28 +927,37 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
         control=True
     ).add_to(m)
     
-    # Colores específicos por cultivo - EXACTOS de la paleta oficial JavaScript
+    # Colores EXACTOS por nombre de cultivo (basado en tu JavaScript)
     colores_cultivos = {
+        # Cultivos con ID fijo en todas las campañas
         "Maíz": "#0042ff",           # ID 10 - Azul
-        "Soja 1ra": "#339820",       # ID 11 - Verde
-        "Girasol": "#FFFF00",        # ID 12 - Amarillo (CORREGIDO)
-        "Girasol-CV": "#FFFF00",     # ID 19 - Amarillo (CORREGIDO)
+        "Soja 1ra": "#339820",       # ID 11 - Verde  
+        "Girasol": "#FFFF00",        # ID 12 - Amarillo
         "Poroto": "#f022db",         # ID 13 - Rosa/Fucsia
         "Algodón": "#b7b9bd",        # ID 15 - Gris claro
-        "Maní": "#FFA500",           # ID 16 - Naranja (CORREGIDO)
+        "Maní": "#FFA500",           # ID 16 - Naranja
         "Arroz": "#1d1e33",          # ID 17 - Azul oscuro
-        "Sorgo GR": "#FF0000",       # ID 18 - Rojo (CORREGIDO)
-        "Caña de azúcar": "#a32102", # ID 19 - Rojo oscuro
-        "Caña de Azúcar": "#a32102", # ID 19 - Rojo oscuro
+        "Sorgo GR": "#FF0000",       # ID 18 - Rojo
         "Barbecho": "#646b63",       # ID 21 - Gris oscuro
         "No agrícola": "#e6f0c2",    # ID 22 - Beige claro
         "No Agrícola": "#e6f0c2",    # ID 22 - Beige claro
-        "Papa": "#8A2BE2",           # ID 26 - Violeta (CORREGIDO)
+        "Papa": "#8A2BE2",           # ID 26 - Violeta
         "Verdeo de Sorgo": "#800080", # ID 28 - Morado
-        "Tabaco": "#D2B48C",         # ID 30 - Marrón claro (CORREGIDO)
-        "CI-Maíz 2da": "#87CEEB",    # ID 31 - Azul claro/celeste (CORREGIDO)
+        "Tabaco": "#D2B48C",         # ID 30 - Marrón claro
+        "CI-Maíz 2da": "#87CEEB",    # ID 31 - Azul claro/celeste
         "CI-Soja 2da": "#90ee90",    # ID 32 - Verde claro/fluor
-        "Soja 2da": "#90ee90"        # ID 32 - Verde claro/fluor
+        "Soja 2da": "#90ee90",       # ID 32 - Verde claro/fluor
+        
+        # Cultivos que CAMBIAN de ID según campaña - TODOS usan ID 19 → color #a32102
+        "Girasol-CV": "#a32102",     # ID 19 en campañas 19-20, 20-21 - Rojo oscuro
+        "Caña de azúcar": "#a32102", # ID 19 en campañas 21-22, 22-23, 23-24 - Rojo oscuro
+        "Caña de Azúcar": "#a32102", # ID 19 en campañas 21-22, 22-23, 23-24 - Rojo oscuro
+        
+        # Variantes de nombres que pueden aparecer
+        "CI-Maíz": "#87CEEB",        # Variante de CI-Maíz 2da
+        "C inv - Maíz 2da": "#87CEEB", # Variante de CI-Maíz 2da
+        "CI-Soja": "#90ee90",        # Variante de CI-Soja 2da
+        "C inv - Soja 2da": "#90ee90"  # Variante de CI-Soja 2da
     }
     
     # Crear grupos de capas por campaña
