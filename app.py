@@ -288,33 +288,33 @@ def analizar_cultivos_web(aoi):
             progress_bar = st.progress(0.0)
             status_text = st.empty()
         
-        # Paleta de colores oficial para visualización
+        # 🎨 PALETA OFICIAL SINCRONIZADA - Earth Engine + Gráfico
         paleta_oficial = [
             '646b63',  # 0: Sin datos / barbecho
             '646b63',  # 1-5: Reservados
             'ffffff',  # 6: Trigo
             'ff6347',  # 7-9: Reservados  
-            '0042ff',  # 10: Maíz
-            '339820',  # 11: Soja 1ra
-            'ffff00',  # 12: Girasol
-            'f022db',  # 13: Poroto
-            'a32102',  # 14: Caña de azúcar
-            'b7b9bd',  # 15: Algodón
-            'ffa500',  # 16: Maní
-            '1d1e33',  # 17: Arroz
-            'ff0000',  # 18: Sorgo GR
-            'ffff00',  # 19: Girasol-CV
-            '646b63',  # 20: Barbecho
-            'e6f0c2',  # 21: No agrícola
-            'e6f0c2',  # 22: No agrícola
+            '0042ff',  # 10: Maíz - AZUL
+            '339820',  # 11: Soja 1ra - VERDE
+            'ffff00',  # 12: Girasol - AMARILLO
+            'f022db',  # 13: Poroto - ROSA/FUCSIA
+            'a32102',  # 14: Caña de azúcar - ROJO OSCURO
+            'b7b9bd',  # 15: Algodón - GRIS CLARO
+            'ffa500',  # 16: Maní - NARANJA
+            '1d1e33',  # 17: Arroz - AZUL OSCURO
+            'ff0000',  # 18: Sorgo GR - ROJO
+            'a32102',  # 19: ⚠️ CORREGIDO: Girasol-CV/Caña → ROJO OSCURO (era amarillo)
+            '646b63',  # 20: Barbecho - GRIS OSCURO
+            'e6f0c2',  # 21: No agrícola - BEIGE CLARO
+            'e6f0c2',  # 22: No agrícola - BEIGE CLARO
             'ff6347',  # 23-25: Reservados
-            '8a2be2',  # 26: Papa
+            '8a2be2',  # 26: Papa - VIOLETA
             'ff6347',  # 27: Reservado
-            '800080',  # 28: Verdeo de Sorgo
+            '800080',  # 28: Verdeo de Sorgo - MORADO
             'ff6347',  # 29: Reservado
-            'd2b48c',  # 30: Tabaco
-            '87ceeb',  # 31: CI-Maíz 2da
-            '90ee90'   # 32: CI-Soja 2da
+            'd2b48c',  # 30: Tabaco - MARRÓN CLARO
+            '87ceeb',  # 31: CI-Maíz 2da - AZUL CLARO/CELESTE
+            '90ee90'   # 32: CI-Soja 2da - VERDE CLARO/FLUOR
         ]
         
         status_text.text("⚡ Cargando capas de cultivos...")
@@ -377,25 +377,82 @@ def analizar_cultivos_web(aoi):
                 
                 capas[campana] = capa_combinada
                 
-                # Generar tiles para visualización
+                # 🎨 GENERAR TILES CON PALETA GARANTIZADA
                 try:
-                    vis_params = {'min': 0, 'max': 32, 'palette': paleta_oficial}
+                    # Parámetros optimizados para evitar fallos
+                    vis_params = {
+                        'min': 0, 
+                        'max': 32, 
+                        'palette': paleta_oficial,
+                        'forceRgbOutput': True  # Forzar salida RGB
+                    }
+                    
+                    print(f"🎨 Generando tiles para {campana} con {len(paleta_oficial)} colores...")
                     map_id = capa_combinada.getMapId(vis_params)
                     
                     # Acceso correcto a tiles
                     if 'tile_fetcher' in map_id and hasattr(map_id['tile_fetcher'], 'url_format'):
                         tiles_urls[campana] = map_id['tile_fetcher'].url_format
+                        print(f"✅ Tiles {campana} con paleta oficial generados")
                     elif 'urlTemplate' in map_id:
                         tiles_urls[campana] = map_id['urlTemplate']
+                        print(f"✅ Tiles {campana} con paleta oficial generados (urlTemplate)")
                         
-                except:
-                    # Método alternativo silencioso
+                except Exception as e:
+                    print(f"⚠️ Método principal falló para {campana}: {e}")
+                    # 🎨 MÉTODO ALTERNATIVO: CONTROL TOTAL DE COLORES
                     try:
-                        vis_image = capa_combinada.visualize(**vis_params)
-                        simple_map_id = vis_image.getMapId({})
+                        print(f"🔄 Creando mapa RGB con TUS colores exactos para {campana}...")
+                        
+                        # 🎯 CREAR IMAGEN RGB CON COLORES GARANTIZADOS
+                        # Convertir paleta hex a RGB
+                        def hex_to_rgb(hex_color):
+                            hex_color = hex_color.lstrip('#')
+                            return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+                        
+                        # Crear imagen base transparente
+                        imagen_rgb = ee.Image([0, 0, 0]).byte()
+                        
+                        # Mapeo ID → Color RGB exacto
+                        colores_rgb_exactos = {
+                            10: hex_to_rgb('#0042ff'),  # Maíz - Azul
+                            11: hex_to_rgb('#339820'),  # Soja 1ra - Verde
+                            12: hex_to_rgb('#FFFF00'),  # Girasol - Amarillo
+                            13: hex_to_rgb('#f022db'),  # Poroto - Rosa
+                            14: hex_to_rgb('#a32102'),  # Caña de azúcar - Rojo oscuro
+                            15: hex_to_rgb('#b7b9bd'),  # Algodón - Gris claro
+                            16: hex_to_rgb('#FFA500'),  # Maní - Naranja
+                            17: hex_to_rgb('#1d1e33'),  # Arroz - Azul oscuro
+                            18: hex_to_rgb('#FF0000'),  # Sorgo GR - Rojo
+                            19: hex_to_rgb('#a32102'),  # Girasol-CV/Caña - Rojo oscuro
+                            21: hex_to_rgb('#e6f0c2'),  # No agrícola - Beige
+                            22: hex_to_rgb('#e6f0c2'),  # No agrícola - Beige
+                            26: hex_to_rgb('#8A2BE2'),  # Papa - Violeta
+                            28: hex_to_rgb('#800080'),  # Verdeo Sorgo - Morado
+                            30: hex_to_rgb('#D2B48C'),  # Tabaco - Marrón claro
+                            31: hex_to_rgb('#87CEEB'),  # CI-Maíz 2da - Azul claro
+                            32: hex_to_rgb('#90ee90')   # CI-Soja 2da - Verde claro
+                        }
+                        
+                        # Construir imagen RGB píxel por píxel con TUS colores
+                        for cultivo_id, rgb in colores_rgb_exactos.items():
+                            mascara = capa_combinada.eq(cultivo_id)
+                            color_img = ee.Image([rgb[0], rgb[1], rgb[2]]).byte()
+                            imagen_rgb = imagen_rgb.where(mascara, color_img)
+                        
+                        # Generar tiles de la imagen RGB personalizada
+                        rgb_vis_params = {'min': 0, 'max': 255, 'bands': ['constant', 'constant_1', 'constant_2']}
+                        simple_map_id = imagen_rgb.getMapId(rgb_vis_params)
+                        
                         if 'tile_fetcher' in simple_map_id:
                             tiles_urls[campana] = simple_map_id['tile_fetcher'].url_format
-                    except:
+                            print(f"✅ Tiles {campana} generados con COLORES EXACTOS RGB")
+                        elif 'urlTemplate' in simple_map_id:
+                            tiles_urls[campana] = simple_map_id['urlTemplate']
+                            print(f"✅ Tiles {campana} generados con COLORES EXACTOS RGB")
+                            
+                    except Exception as e2:
+                        print(f"❌ Ambos métodos fallaron para {campana}: {e2}")
                         pass
                 
             except:
@@ -447,7 +504,6 @@ def analizar_cultivos_web(aoi):
                             resultados_todas_campanas.append({
                                 'Campaña': campana,
                                 'Cultivo': nombre_cultivo,
-                                'ID': cultivo_id_int,
                                 'Área (ha)': area_cultivo_ha,
                                 'Porcentaje (%)': porcentaje_cultivo
                             })
@@ -748,34 +804,48 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
             st.warning(f"Error agregando tiles: {e}")
             pass  # Si falla, continuar sin tiles
     
-    # Agregar contorno del AOI MÁS VISIBLE con línea blanca y gruesa
+    # 🔥 CONTORNO SÚPER VISIBLE - Línea blanca gruesa + sombra
     try:
         aoi_geojson = aoi.getInfo()
         if aoi_geojson:
-            # Agregar línea blanca gruesa para máxima visibilidad
+            # Sombra negra más gruesa para crear contraste
             folium.GeoJson(
                 aoi_geojson,
-                name="Límite del Campo",
+                name="Sombra del Campo",
                 style_function=lambda x: {
                     "fillColor": "transparent",
-                    "color": "white", 
-                    "weight": 6,  # Línea más gruesa
+                    "color": "black", 
+                    "weight": 10,  # Sombra más gruesa
                     "fillOpacity": 0,
-                    "opacity": 1.0,  # Máxima opacidad
-                    "dashArray": "10, 5"  # Línea punteada para mejor visibilidad
+                    "opacity": 0.6,
+                    "dashArray": "15, 8"
                 }
             ).add_to(m)
             
-            # Agregar segunda línea roja más fina por dentro para contraste
+            # Línea blanca principal SÚPER GRUESA
+            folium.GeoJson(
+                aoi_geojson,
+                name="Límite Principal",
+                style_function=lambda x: {
+                    "fillColor": "transparent",
+                    "color": "white", 
+                    "weight": 8,  # Aún más gruesa
+                    "fillOpacity": 0,
+                    "opacity": 1.0,  # Máxima opacidad
+                    "dashArray": "12, 6"  # Línea punteada más visible
+                }
+            ).add_to(m)
+            
+            # Línea roja interior para máximo contraste
             folium.GeoJson(
                 aoi_geojson,
                 name="Contorno Interior",
                 style_function=lambda x: {
                     "fillColor": "transparent",
-                    "color": "red", 
-                    "weight": 3,
+                    "color": "#FF0000", 
+                    "weight": 4,  # Línea roja más gruesa
                     "fillOpacity": 0,
-                    "opacity": 0.8
+                    "opacity": 1.0  # Máxima opacidad
                 }
             ).add_to(m)
     except Exception as e:
@@ -858,7 +928,7 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
                         border-radius: 6px !important; text-align: center !important; 
                         font-weight: bold !important; font-size: 13px !important;
                         border: 1px solid #4682B4 !important;">
-                📊 Área Total: {area_total_campana:.0f} hectáreas
+                📊 Área Total: {area_total_campana:,.0f} hectáreas
             </div>
             """
             
@@ -898,7 +968,7 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
                                 </div>
                                 <div style="color: #5a6c7d !important; line-height: 1.2 !important;
                                             font-size: 11px !important; font-weight: 500 !important;">
-                                    🌾 {area:.0f} ha • {porcentaje:.1f}%
+                                    🌾 {area:,.0f} ha • {porcentaje:.1f}%
                                 </div>
                             </div>
                         </div>
@@ -1301,27 +1371,7 @@ def main():
     if 'analisis_completado' not in st.session_state:
         st.session_state.analisis_completado = False
     
-    with st.sidebar:
-        st.header("📋 Información")
-        st.write("""
-        **¿Qué hace esta aplicación?**
-        
-        1. **Sube archivos KMZ** con polígonos de campos
-        2. **Analiza cultivos** usando Google Earth Engine
-        3. **Calcula rotación** por campaña (2019-2024)
-        4. **Genera gráficos** profesionales
-        5. **Permite descargar** resultados en CSV
-        """)
-        
-        st.header("🎯 Cultivos detectados")
-        st.write("""
-        - Maíz / Soja / Girasol
-        - Poroto / Algodón / Maní
-        - Arroz / Sorgo / Papa
-        - Caña de azúcar / Tabaco
-        - Cultivos de cobertura
-        - Áreas no agrícolas
-        """)
+    # SIDEBAR ELIMINADO - Mejor UX/UI sin información innecesaria
     
     if 'ee_initialized' not in st.session_state:
         with st.spinner("Inicializando Google Earth Engine..."):
@@ -1421,18 +1471,18 @@ def main():
         cultivos_por_campana = datos['cultivos_por_campana']
         aoi = datos['aoi']
         
-        # Métricas principales - Responsive
+        # Métricas principales - Responsive CON FORMATO DE NÚMEROS
         st.markdown('<div class="metric-container">', unsafe_allow_html=True)
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Área Total", f"{area_total:.1f} ha")
+            st.metric("Área Total", f"{area_total:,.1f} ha")
         with col2:
             cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
-            st.metric("Cultivos Detectados", cultivos_detectados)
+            st.metric("Cultivos Detectados", f"{cultivos_detectados:,}")
         with col3:
             area_agricola_por_campana = df_cultivos[~df_cultivos['Cultivo'].str.contains('No agrícola', na=False)].groupby('Campaña')['Área (ha)'].sum()
             area_agricola = area_agricola_por_campana.mean()
-            st.metric("Área Agrícola", f"{area_agricola:.1f} ha", help="Promedio de área agrícola por campaña")
+            st.metric("Área Agrícola", f"{area_agricola:,.1f} ha", help="Promedio de área agrícola por campaña")
         with col4:
             porcentaje_agricola = (area_agricola / area_total * 100) if area_total > 0 else 0
             st.metric("% Agrícola", f"{porcentaje_agricola:.1f}%", help="Porcentaje promedio de área agrícola")
@@ -1474,8 +1524,8 @@ def main():
                 
                 st.metric(
                     f"Campaña {campana_seleccionada}", 
-                    f"{area_agricola_sel:.1f} ha agrícolas",
-                    help=f"{cultivos_sel} cultivos detectados"
+                    f"{area_agricola_sel:,.1f} ha agrícolas",
+                    help=f"{cultivos_sel:,} cultivos detectados"
                 )
             
             # Mostrar mapa
@@ -1572,8 +1622,8 @@ def main():
                 aggfunc='sum', 
                 fill_value=0
             )
-            pivot_summary['Total'] = pivot_summary.sum(axis=1)
-            pivot_filtered = pivot_summary[pivot_summary['Total'] > 0].sort_values('Total', ascending=False)
+            pivot_summary['Promedio'] = pivot_summary.mean(axis=1).round(1)
+            pivot_filtered = pivot_summary[pivot_summary['Promedio'] > 0].sort_values('Promedio', ascending=False)
             st.dataframe(pivot_filtered, use_container_width=True)
             
             # Mensaje final
