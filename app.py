@@ -379,8 +379,6 @@ def analizar_cultivos_web(aoi):
                 
                 # 🎨 GENERAR TILES CON PALETA GARANTIZADA
                 try:
-                    # 🔧 FORZAR ERROR PARA DIAGNÓSTICO - TEMPORALMENTE
-                    raise Exception("🔍 FORZANDO USO DEL MÉTODO RGB ALTERNATIVO PARA DIAGNÓSTICO")
                     
                     # Parámetros optimizados para evitar fallos
                     vis_params = {
@@ -413,8 +411,9 @@ def analizar_cultivos_web(aoi):
                             hex_color = hex_color.lstrip('#')
                             return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
                         
-                        # Crear imagen base transparente
-                        imagen_rgb = ee.Image([0, 0, 0]).byte()
+                        # 🎯 CREAR IMAGEN TRANSPARENTE (sin píxeles negros)
+                        # Crear máscara de cultivos válidos
+                        mascara_cultivos = capa_combinada.gt(0)  # Solo píxeles con cultivos
                         
                         # Mapeo ID → Color RGB exacto
                         colores_rgb_exactos = {
@@ -443,15 +442,50 @@ def analizar_cultivos_web(aoi):
                                 hex_color = f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
                                 st.write(f"ID {cultivo_id}: RGB{rgb} → {hex_color}")
                         
-                        # Construir imagen RGB píxel por píxel con TUS colores
-                        for cultivo_id, rgb in colores_rgb_exactos.items():
-                            mascara = capa_combinada.eq(cultivo_id)
-                            color_img = ee.Image([rgb[0], rgb[1], rgb[2]]).byte()
-                            imagen_rgb = imagen_rgb.where(mascara, color_img)
+                        # 🔧 CREAR IMAGEN RGB SIMPLIFICADA Y EFICIENTE
+                        # Usar el método visualization con parámetros RGB específicos
+                        imagen_rgb = capa_combinada.visualize(
+                            min=0, 
+                            max=32, 
+                            palette=[f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}" for rgb in [
+                                hex_to_rgb('646b63'),  # 0
+                                hex_to_rgb('646b63'),  # 1
+                                hex_to_rgb('646b63'),  # 2
+                                hex_to_rgb('646b63'),  # 3
+                                hex_to_rgb('646b63'),  # 4
+                                hex_to_rgb('646b63'),  # 5
+                                hex_to_rgb('ffffff'),  # 6
+                                hex_to_rgb('ff6347'),  # 7
+                                hex_to_rgb('ff6347'),  # 8
+                                hex_to_rgb('ff6347'),  # 9
+                                hex_to_rgb('0042ff'),  # 10 - Maíz
+                                hex_to_rgb('339820'),  # 11 - Soja 1ra
+                                hex_to_rgb('FFFF00'),  # 12 - Girasol
+                                hex_to_rgb('f022db'),  # 13 - Poroto
+                                hex_to_rgb('a32102'),  # 14 - Caña
+                                hex_to_rgb('b7b9bd'),  # 15 - Algodón
+                                hex_to_rgb('FFA500'),  # 16 - Maní
+                                hex_to_rgb('1d1e33'),  # 17 - Arroz
+                                hex_to_rgb('FF0000'),  # 18 - Sorgo
+                                hex_to_rgb('a32102'),  # 19 - Girasol-CV/Caña
+                                hex_to_rgb('646b63'),  # 20
+                                hex_to_rgb('e6f0c2'),  # 21 - No agrícola
+                                hex_to_rgb('e6f0c2'),  # 22 - No agrícola
+                                hex_to_rgb('ff6347'),  # 23
+                                hex_to_rgb('ff6347'),  # 24
+                                hex_to_rgb('ff6347'),  # 25
+                                hex_to_rgb('8A2BE2'),  # 26 - Papa
+                                hex_to_rgb('ff6347'),  # 27
+                                hex_to_rgb('800080'),  # 28 - Verdeo Sorgo
+                                hex_to_rgb('ff6347'),  # 29
+                                hex_to_rgb('D2B48C'),  # 30 - Tabaco
+                                hex_to_rgb('87CEEB'),  # 31 - CI-Maíz
+                                hex_to_rgb('90ee90')   # 32 - CI-Soja
+                            ]]
+                        )
                         
                         # Generar tiles de la imagen RGB personalizada
-                        rgb_vis_params = {'min': 0, 'max': 255, 'bands': ['constant', 'constant_1', 'constant_2']}
-                        simple_map_id = imagen_rgb.getMapId(rgb_vis_params)
+                        simple_map_id = imagen_rgb.getMapId({})
                         
                         if 'tile_fetcher' in simple_map_id:
                             tiles_urls[campana] = simple_map_id['tile_fetcher'].url_format
