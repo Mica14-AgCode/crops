@@ -1313,23 +1313,38 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
         # Agregar el grupo de características al mapa
         feature_group.add_to(m)
     
-    # Intentar agregar el contorno del AOI
+    # 🔥 CONTORNOS SÚPER VISIBLES - BLANCO Y GRUESO 
     try:
         # Obtener geometría del AOI como GeoJSON
         aoi_geojson = aoi.getInfo()
         
-        # Agregar AOI como overlay
-        folium.GeoJson(
-            aoi_geojson,
-            name="Límite del Campo",
-            style_function=lambda x: {
-                "fillColor": "transparent",
-                "color": "red",
-                "weight": 3,
-                "fillOpacity": 0
-            },
-            tooltip="Límite del área analizada"
-        ).add_to(m)
+        if aoi_geojson:
+            # SOMBRA NEGRA (contraste)
+            folium.GeoJson(
+                aoi_geojson,
+                name="",
+                style_function=lambda x: {
+                    "fillColor": "transparent",
+                    "color": "#000000",
+                    "weight": 12,
+                    "fillOpacity": 0,
+                    "opacity": 0.8
+                }
+            ).add_to(m)
+            
+            # LÍNEA BLANCA SÚPER GRUESA
+            folium.GeoJson(
+                aoi_geojson,
+                name="⚪ Límite del Campo",
+                style_function=lambda x: {
+                    "fillColor": "transparent",
+                    "color": "#FFFFFF",
+                    "weight": 6,
+                    "fillOpacity": 0,
+                    "opacity": 1.0
+                },
+                tooltip="Límite del área analizada"
+            ).add_to(m)
         
     except:
         pass
@@ -1372,29 +1387,14 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
     return m
 
 def main():
-    # 🎨 LOGO VISU - Diseño simple y elegante
-    st.markdown("""
-    <div style="text-align: center; padding: 2rem 0; 
-                background: linear-gradient(135deg, #0D0D0D, #1a1a1a); 
-                margin: -1rem -1rem 2rem -1rem; border-radius: 0 0 20px 20px;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
-        
-        <h1 style="color: #E8E8E8; font-family: 'Helvetica Neue', Arial, sans-serif; 
-                   font-size: 4rem; font-weight: 200; letter-spacing: 20px; 
-                   margin: 0; text-shadow: 0 0 20px rgba(45, 212, 191, 0.5);">
-            VISU
-        </h1>
-        
-        <div style="width: 300px; height: 2px; background: linear-gradient(90deg, 
-                    transparent, #2DD4BF, transparent); margin: 1rem auto;"></div>
-        
-        <p style="color: #B8BFC7; font-family: 'Helvetica Neue', Arial, sans-serif; 
-                  font-size: 1.2rem; font-weight: 300; letter-spacing: 3px; 
-                  margin: 1rem 0 0 0;">
-            VISUALIZE WITH SUPERPOWERS
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    # Configurar página
+    st.title("🌾 Análisis de Rotación de Cultivos")
+    
+    # 🎨 LOGO VISU - Método simple que funciona
+    st.markdown('<div style="text-align: center; padding: 1rem; background: linear-gradient(135deg, #0D0D0D, #1a1a1a); margin-bottom: 2rem; border-radius: 10px;">', unsafe_allow_html=True)
+    st.markdown('<h1 style="color: #E8E8E8; font-size: 3rem; letter-spacing: 15px; margin: 0;">V I S U</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="color: #2DD4BF; font-size: 1rem; letter-spacing: 2px; margin: 0;">VISUALIZE WITH SUPERPOWERS</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # CSS Responsive para móviles
     st.markdown("""
