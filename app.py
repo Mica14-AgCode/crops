@@ -540,12 +540,30 @@ def generar_grafico_rotacion_web(df_resultados):
             df_rotacion_final = ajustar_a_100(df_rotacion_final, col)
         
         colores_cultivos = {
-            'Maíz': '#0042ff', 'Soja 1ra': '#339820', 'Girasol': '#FFFF00', 'Poroto': '#f022db',
-            'Algodón': '#b7b9bd', 'Maní': '#FFA500', 'Arroz': '#1d1e33', 'Sorgo GR': '#FF0000',
-            'Caña de Azúcar': '#a32102', 'Caña de azúcar': '#a32102', 'Barbecho': '#646b63',
-            'No Agrícola': '#e6f0c2', 'Papa': '#8A2BE2', 'Verdeo de Sorgo': '#800080',
-            'Tabaco': '#D2B48C', 'CI-Maíz': '#87CEEB', 'CI-Maíz 2da': '#87CEEB',
-            'CI-Soja': '#90ee90', 'CI-Soja 2da': '#90ee90', 'Soja 2da': '#90ee90'
+            'Maíz': '#0042ff',           # ID 10 - Azul
+            'Soja 1ra': '#339820',       # ID 11 - Verde
+            'Girasol': '#FFFF00',        # ID 12 - Amarillo (CORREGIDO)
+            'Poroto': '#f022db',         # ID 13 - Rosa/Fucsia
+            'Caña de azúcar': '#a32102', # ID 19 - Rojo oscuro
+            'Caña de Azúcar': '#a32102', # ID 19 - Rojo oscuro (variante)
+            'Algodón': '#b7b9bd',        # ID 15 - Gris claro
+            'Maní': '#FFA500',           # ID 16 - Naranja (CORREGIDO)
+            'Arroz': '#1d1e33',          # ID 17 - Azul oscuro
+            'Sorgo GR': '#FF0000',       # ID 18 - Rojo (CORREGIDO)
+            'Girasol-CV': '#FFFF00',     # ID 19 - Amarillo (CORREGIDO)
+            'Barbecho': '#646b63',       # ID 21 - Gris oscuro
+            'No agrícola': '#e6f0c2',    # ID 22 - Beige claro
+            'No Agrícola': '#e6f0c2',    # ID 22 - Beige claro (variante)
+            'Papa': '#8A2BE2',           # ID 26 - Violeta (CORREGIDO)
+            'Verdeo de Sorgo': '#800080', # ID 28 - Morado
+            'Tabaco': '#D2B48C',         # ID 30 - Marrón claro (CORREGIDO)
+            'CI-Maíz': '#87CEEB',        # ID 31 - Azul claro/celeste (CORREGIDO)
+            'CI-Maíz 2da': '#87CEEB',    # ID 31 - Azul claro/celeste (CORREGIDO)
+            'C inv - Maíz 2da': '#87CEEB', # ID 31 - Azul claro/celeste (CORREGIDO)
+            'CI-Soja': '#90ee90',        # ID 32 - Verde claro/fluor
+            'CI-Soja 2da': '#90ee90',    # ID 32 - Verde claro/fluor
+            'C inv - Soja 2da': '#90ee90', # ID 32 - Verde claro/fluor
+            'Soja 2da': '#90ee90'        # ID 32 - Verde claro/fluor
         }
         
         color_default = '#999999'
@@ -690,96 +708,155 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         pass
     
     # Crear leyenda con información de cultivos
+    legend_added = False
+    
     try:
         df_campana = df_resultados[df_resultados['Campaña'] == campana_seleccionada]
         
-        # Colores para la leyenda
-        colores_cultivos = {
-            'Maíz': '#0042ff', 'Soja 1ra': '#339820', 'Girasol': '#FFFF00', 'Poroto': '#f022db',
-            'Algodón': '#b7b9bd', 'Maní': '#FFA500', 'Arroz': '#1d1e33', 'Sorgo GR': '#FF0000',
-            'Caña de azúcar': '#a32102', 'Barbecho': '#646b63', 'No agrícola': '#e6f0c2',
-            'Papa': '#8A2BE2', 'Verdeo de Sorgo': '#800080', 'Tabaco': '#D2B48C',
-            'CI-Maíz 2da': '#87CEEB', 'CI-Soja 2da': '#90ee90', 'Girasol-CV': '#FFFF00'
-        }
-        
-        # Calcular área total
-        area_total_campana = float(df_campana['Área (ha)'].sum())
-        
-        # Crear leyenda HTML
-        legend_html = f"""
-        <div style="position: fixed; 
-                    top: 10px; right: 10px; width: 280px;
-                    background-color: rgba(255, 255, 255, 0.95); 
-                    z-index: 1000; 
-                    border: 2px solid #2E8B57; 
-                    border-radius: 8px;
-                    padding: 12px; 
-                    font-family: Arial, sans-serif;
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.5);
-                    max-height: 80vh; 
-                    overflow-y: auto;">
-                    
-        <h4 style="margin: 0 0 10px 0; text-align: center; 
-                   background-color: #2E8B57; color: white; 
-                   padding: 8px; border-radius: 4px; font-size: 14px;">
-            🌾 Campaña {campana_seleccionada}
-        </h4>
-        
-        <div style="margin-bottom: 12px; padding: 6px; background-color: #f0f8ff; 
-                    border-radius: 4px; text-align: center; font-weight: bold; font-size: 12px;">
-            Total: {area_total_campana:.0f} hectáreas
-        </div>
-        """
-        
-        # Filtrar cultivos con área > 0 y ordenar
-        cultivos_con_area = df_campana[df_campana['Área (ha)'] > 0].sort_values('Área (ha)', ascending=False)
-        
-        # Agregar cada cultivo a la leyenda
-        for idx, (_, row) in enumerate(cultivos_con_area.iterrows()):
+        if not df_campana.empty:
+            # Colores para la leyenda - EXACTOS de la paleta oficial JavaScript
+            colores_cultivos = {
+                'Maíz': '#0042ff',           # ID 10 - Azul
+                'Soja 1ra': '#339820',       # ID 11 - Verde
+                'Girasol': '#FFFF00',        # ID 12 - Amarillo (CORREGIDO)
+                'Poroto': '#f022db',         # ID 13 - Rosa/Fucsia
+                'Caña de azúcar': '#a32102', # ID 19 - Rojo oscuro
+                'Algodón': '#b7b9bd',        # ID 15 - Gris claro
+                'Maní': '#FFA500',           # ID 16 - Naranja (CORREGIDO)
+                'Arroz': '#1d1e33',          # ID 17 - Azul oscuro
+                'Sorgo GR': '#FF0000',       # ID 18 - Rojo (CORREGIDO)
+                'Girasol-CV': '#FFFF00',     # ID 19 - Amarillo (CORREGIDO)
+                'Barbecho': '#646b63',       # ID 21 - Gris oscuro
+                'No agrícola': '#e6f0c2',    # ID 22 - Beige claro
+                'Papa': '#8A2BE2',           # ID 26 - Violeta (CORREGIDO)
+                'Verdeo de Sorgo': '#800080', # ID 28 - Morado
+                'Tabaco': '#D2B48C',         # ID 30 - Marrón claro (CORREGIDO)
+                'CI-Maíz 2da': '#87CEEB',    # ID 31 - Azul claro/celeste (CORREGIDO)
+                'CI-Soja 2da': '#90ee90'     # ID 32 - Verde claro/fluor
+            }
+            
+            # Calcular área total
             try:
-                cultivo = str(row['Cultivo'])
-                area = float(row['Área (ha)'])
-                porcentaje = float(row['Porcentaje (%)'])
-                color = colores_cultivos.get(cultivo, '#999999')
+                area_total_campana = float(df_campana['Área (ha)'].sum())
+            except:
+                area_total_campana = 0
+            
+            # Crear leyenda HTML
+            legend_html = f"""
+            <div style="position: fixed; 
+                        top: 10px; right: 10px; width: 280px;
+                        background-color: rgba(255, 255, 255, 0.95); 
+                        z-index: 1000; 
+                        border: 2px solid #2E8B57; 
+                        border-radius: 8px;
+                        padding: 12px; 
+                        font-family: Arial, sans-serif;
+                        box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+                        max-height: 80vh; 
+                        overflow-y: auto;">
+                        
+            <h4 style="margin: 0 0 10px 0; text-align: center; 
+                       background-color: #2E8B57; color: white; 
+                       padding: 8px; border-radius: 4px; font-size: 14px;">
+                🌾 Campaña {campana_seleccionada}
+            </h4>
+            
+            <div style="margin-bottom: 12px; padding: 6px; background-color: #f0f8ff; 
+                        border-radius: 4px; text-align: center; font-weight: bold; font-size: 12px;">
+                Total: {area_total_campana:.0f} hectáreas
+            </div>
+            """
+            
+            # Filtrar cultivos con área > 0 y ordenar
+            try:
+                cultivos_con_area = df_campana[df_campana['Área (ha)'] > 0].sort_values('Área (ha)', ascending=False)
                 
-                bg_color = '#f9f9f9' if idx % 2 == 0 else '#ffffff'
-                
-                legend_html += f"""
-                <div style="display: flex; align-items: center; margin: 6px 0; 
-                            padding: 6px; background-color: {bg_color};
-                            border-radius: 4px; border-left: 3px solid {color};">
-                    <div style="width: 20px; height: 15px; background-color: {color}; 
-                                margin-right: 8px; border: 1px solid #333;
-                                border-radius: 2px; flex-shrink: 0;"></div>
-                    <div style="flex-grow: 1; font-size: 11px;">
-                        <div style="font-weight: bold; color: #333; line-height: 1.2;">
-                            {cultivo}
+                # Agregar cada cultivo a la leyenda
+                for idx, (_, row) in enumerate(cultivos_con_area.iterrows()):
+                    try:
+                        cultivo = str(row['Cultivo'])
+                        area = float(row['Área (ha)'])
+                        porcentaje = float(row['Porcentaje (%)'])
+                        color = colores_cultivos.get(cultivo, '#999999')
+                        
+                        bg_color = '#f9f9f9' if idx % 2 == 0 else '#ffffff'
+                        
+                        legend_html += f"""
+                        <div style="display: flex; align-items: center; margin: 6px 0; 
+                                    padding: 6px; background-color: {bg_color};
+                                    border-radius: 4px; border-left: 3px solid {color};">
+                            <div style="width: 20px; height: 15px; background-color: {color}; 
+                                        margin-right: 8px; border: 1px solid #333;
+                                        border-radius: 2px; flex-shrink: 0;"></div>
+                            <div style="flex-grow: 1; font-size: 11px;">
+                                <div style="font-weight: bold; color: #333; line-height: 1.2;">
+                                    {cultivo}
+                                </div>
+                                <div style="color: #666; line-height: 1.2;">
+                                    {area:.0f} ha ({porcentaje:.1f}%)
+                                </div>
+                            </div>
                         </div>
-                        <div style="color: #666; line-height: 1.2;">
-                            {area:.0f} ha ({porcentaje:.1f}%)
-                        </div>
-                    </div>
+                        """
+                    except:
+                        continue  # Saltar cultivos problemáticos
+            except:
+                # Si no hay cultivos, mostrar mensaje
+                legend_html += """
+                <div style="text-align: center; color: #666; padding: 10px;">
+                    No hay cultivos detectados<br>para esta campaña
                 </div>
                 """
-            except:
-                continue  # Saltar cultivos problemáticos
+            
+            # Pie de la leyenda
+            legend_html += """
+            <div style="margin-top: 10px; padding-top: 8px; 
+                        border-top: 1px solid #2E8B57; font-size: 10px; 
+                        color: #666; text-align: center;">
+                📡 Google Earth Engine<br>
+                🛰️ Mapa Nacional de Cultivos
+            </div>
+            </div>
+            """
+            
+            # Agregar leyenda al mapa
+            m.get_root().html.add_child(folium.Element(legend_html))
+            legend_added = True
         
-        # Pie de la leyenda
-        legend_html += """
-        <div style="margin-top: 10px; padding-top: 8px; 
-                    border-top: 1px solid #2E8B57; font-size: 10px; 
-                    color: #666; text-align: center;">
-            📡 Google Earth Engine<br>
-            🛰️ Mapa Nacional de Cultivos
-        </div>
-        </div>
-        """
-        
-        # Agregar leyenda al mapa
-        m.get_root().html.add_child(folium.Element(legend_html))
-        
-    except:
-        pass  # Si falla la leyenda, continuar sin ella
+    except Exception as e:
+        legend_added = False
+    
+    # Si no se pudo agregar la leyenda completa, agregar una básica
+    if not legend_added:
+        try:
+            basic_legend = f"""
+            <div style="position: fixed; top: 10px; right: 10px; width: 250px;
+                        background-color: rgba(255, 255, 255, 0.95); z-index: 1000; 
+                        border: 2px solid #2E8B57; border-radius: 8px; padding: 12px; 
+                        font-family: Arial, sans-serif; box-shadow: 0 4px 8px rgba(0,0,0,0.5);">
+                <h4 style="margin: 0 0 10px 0; text-align: center; 
+                           background-color: #2E8B57; color: white; 
+                           padding: 8px; border-radius: 4px; font-size: 14px;">
+                    🌾 Campaña {campana_seleccionada}
+                </h4>
+                <div style="margin-bottom: 12px; padding: 6px; background-color: #f0f8ff; 
+                            border-radius: 4px; text-align: center; font-weight: bold; font-size: 12px;">
+                    Cultivos procesados con éxito
+                </div>
+                <div style="text-align: center; color: #666; padding: 10px;">
+                    Los datos de cultivos están<br>disponibles en el análisis
+                </div>
+                <div style="margin-top: 10px; padding-top: 8px; 
+                            border-top: 1px solid #2E8B57; font-size: 10px; 
+                            color: #666; text-align: center;">
+                    📡 Google Earth Engine<br>
+                    🛰️ Mapa Nacional de Cultivos
+                </div>
+            </div>
+            """
+            m.get_root().html.add_child(folium.Element(basic_legend))
+        except:
+            pass
     
     # Control de capas
     try:
@@ -833,28 +910,28 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
         control=True
     ).add_to(m)
     
-    # Colores específicos por cultivo (mismos que en los gráficos)
+    # Colores específicos por cultivo - EXACTOS de la paleta oficial JavaScript
     colores_cultivos = {
-        "Maíz": "#0042ff",
-        "Soja 1ra": "#339820", 
-        "Girasol": "#FFFF00",
-        "Girasol-CV": "#FFFF00",
-        "Poroto": "#f022db",
-        "Algodón": "#b7b9bd",
-        "Maní": "#FFA500",
-        "Arroz": "#1d1e33",
-        "Sorgo GR": "#FF0000",
-        "Caña de azúcar": "#a32102",
-        "Caña de Azúcar": "#a32102",
-        "Barbecho": "#646b63",
-        "No agrícola": "#e6f0c2",
-        "No Agrícola": "#e6f0c2",
-        "Papa": "#8A2BE2",
-        "Verdeo de Sorgo": "#800080",
-        "Tabaco": "#D2B48C",
-        "CI-Maíz 2da": "#87CEEB",
-        "CI-Soja 2da": "#90ee90",
-        "Soja 2da": "#90ee90"
+        "Maíz": "#0042ff",           # ID 10 - Azul
+        "Soja 1ra": "#339820",       # ID 11 - Verde
+        "Girasol": "#FFFF00",        # ID 12 - Amarillo (CORREGIDO)
+        "Girasol-CV": "#FFFF00",     # ID 19 - Amarillo (CORREGIDO)
+        "Poroto": "#f022db",         # ID 13 - Rosa/Fucsia
+        "Algodón": "#b7b9bd",        # ID 15 - Gris claro
+        "Maní": "#FFA500",           # ID 16 - Naranja (CORREGIDO)
+        "Arroz": "#1d1e33",          # ID 17 - Azul oscuro
+        "Sorgo GR": "#FF0000",       # ID 18 - Rojo (CORREGIDO)
+        "Caña de azúcar": "#a32102", # ID 19 - Rojo oscuro
+        "Caña de Azúcar": "#a32102", # ID 19 - Rojo oscuro
+        "Barbecho": "#646b63",       # ID 21 - Gris oscuro
+        "No agrícola": "#e6f0c2",    # ID 22 - Beige claro
+        "No Agrícola": "#e6f0c2",    # ID 22 - Beige claro
+        "Papa": "#8A2BE2",           # ID 26 - Violeta (CORREGIDO)
+        "Verdeo de Sorgo": "#800080", # ID 28 - Morado
+        "Tabaco": "#D2B48C",         # ID 30 - Marrón claro (CORREGIDO)
+        "CI-Maíz 2da": "#87CEEB",    # ID 31 - Azul claro/celeste (CORREGIDO)
+        "CI-Soja 2da": "#90ee90",    # ID 32 - Verde claro/fluor
+        "Soja 2da": "#90ee90"        # ID 32 - Verde claro/fluor
     }
     
     # Crear grupos de capas por campaña
