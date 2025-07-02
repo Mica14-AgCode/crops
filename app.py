@@ -377,83 +377,24 @@ def analizar_cultivos_web(aoi):
                 
                 capas[campana] = capa_combinada
                 
-                # 🎨 DIAGNÓSTICO: ¿Por qué falla el método principal?
+                # 🎨 MÉTODO PRINCIPAL CON CONFIGURACIÓN CORREGIDA
                 try:
-                    # 🔍 DIAGNÓSTICO PASO A PASO
-                    st.info(f"🔬 **DIAGNÓSTICO para {campana}**")
-                    
-                    # Verificar valores únicos en la capa
-                    valores_unicos = capa_combinada.reduceRegion(
-                        reducer=ee.Reducer.frequencyHistogram(),
-                        geometry=aoi.geometry(),
-                        scale=30,
-                        maxPixels=1e9
-                    ).getInfo()
-                    
-                    if valores_unicos:
-                        valores_encontrados = list(valores_unicos.values())[0].keys() if valores_unicos.values() else []
-                        st.write(f"**Valores de píxeles encontrados**: {sorted([int(float(v)) for v in valores_encontrados])}")
-                    
-                    # Verificar paleta
-                    st.write(f"**Paleta tiene {len(paleta_oficial)} colores**")
-                    st.write(f"**Rango configurado**: min=0, max=32")
-                    
-                    # Mostrar algunos colores de la paleta
-                    st.write("**Primeros colores de la paleta**:")
-                    for i in range(min(10, len(paleta_oficial))):
-                        st.write(f"  Índice {i}: #{paleta_oficial[i]}")
-                    
-                    # INTENTAR DIFERENTES CONFIGURACIONES
-                    configuraciones = [
-                        {'min': 0, 'max': 32, 'palette': paleta_oficial},
-                        {'min': 0, 'max': len(paleta_oficial)-1, 'palette': paleta_oficial},
-                        {'min': 0, 'max': 32, 'palette': paleta_oficial[:33]},  # Exactamente 33 colores
-                        {'min': 0, 'max': 31, 'palette': paleta_oficial[:32]},  # Exactamente 32 colores
-                    ]
-                    
-                    exito = False
-                    for i, config in enumerate(configuraciones):
-                        try:
-                            st.write(f"🧪 **Probando configuración {i+1}**: min={config['min']}, max={config['max']}, colores={len(config['palette'])}")
-                            
-                            map_id = capa_combinada.getMapId(config)
-                            
-                            if 'tile_fetcher' in map_id and hasattr(map_id['tile_fetcher'], 'url_format'):
-                                tiles_urls[campana] = map_id['tile_fetcher'].url_format
-                                st.success(f"✅ **¡ÉXITO con configuración {i+1}!** Tiles generados")
-                                exito = True
-                                break
-                            elif 'urlTemplate' in map_id:
-                                tiles_urls[campana] = map_id['urlTemplate']
-                                st.success(f"✅ **¡ÉXITO con configuración {i+1}!** Tiles generados (urlTemplate)")
-                                exito = True
-                                break
-                                
-                        except Exception as e_config:
-                            st.warning(f"❌ Configuración {i+1} falló: {str(e_config)[:100]}")
-                    
-                    if not exito:
-                        # Si todas las configuraciones fallan, lanzar error para ir al método alternativo
-                        raise Exception("Todas las configuraciones del método principal fallaron")
-                    
-                    # Parámetros optimizados para evitar fallos
+                    # ✅ CONFIGURACIÓN QUE FUNCIONA (descubierta por diagnóstico)
                     vis_params = {
                         'min': 0, 
                         'max': 32, 
-                        'palette': paleta_oficial,
-                        'forceRgbOutput': True  # Forzar salida RGB
+                        'palette': paleta_oficial  # 25 colores funcionan perfectamente
                     }
                     
-                    print(f"🎨 Generando tiles para {campana} con {len(paleta_oficial)} colores...")
                     map_id = capa_combinada.getMapId(vis_params)
                     
                     # Acceso correcto a tiles
                     if 'tile_fetcher' in map_id and hasattr(map_id['tile_fetcher'], 'url_format'):
                         tiles_urls[campana] = map_id['tile_fetcher'].url_format
-                        st.success(f"✅ **Tiles {campana} con paleta oficial generados**")
+                        st.success(f"✅ **Tiles {campana} con paleta oficial generados** (método principal)")
                     elif 'urlTemplate' in map_id:
                         tiles_urls[campana] = map_id['urlTemplate']
-                        st.success(f"✅ **Tiles {campana} con paleta oficial generados (urlTemplate)**")
+                        st.success(f"✅ **Tiles {campana} con paleta oficial generados** (urlTemplate)")
                         
                 except Exception as e:
                     st.warning(f"⚠️ Método principal falló para {campana}: {e}")
