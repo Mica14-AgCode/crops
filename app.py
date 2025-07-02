@@ -377,24 +377,11 @@ def analizar_cultivos_web(aoi):
                 
                 capas[campana] = capa_combinada
                 
-                # 🎨 MÉTODO PRINCIPAL CON CONFIGURACIÓN CORREGIDA
+                # 🎨 FORZAR MÉTODO RGB QUE SÍ FUNCIONA
                 try:
-                    # ✅ CONFIGURACIÓN QUE FUNCIONA (descubierta por diagnóstico)
-                    vis_params = {
-                        'min': 0, 
-                        'max': 32, 
-                        'palette': paleta_oficial  # 25 colores funcionan perfectamente
-                    }
-                    
-                    map_id = capa_combinada.getMapId(vis_params)
-                    
-                    # Acceso correcto a tiles
-                    if 'tile_fetcher' in map_id and hasattr(map_id['tile_fetcher'], 'url_format'):
-                        tiles_urls[campana] = map_id['tile_fetcher'].url_format
-                        st.success(f"✅ **Tiles {campana} con paleta oficial generados** (método principal)")
-                    elif 'urlTemplate' in map_id:
-                        tiles_urls[campana] = map_id['urlTemplate']
-                        st.success(f"✅ **Tiles {campana} con paleta oficial generados** (urlTemplate)")
+                    # 🔧 MÉTODO PRINCIPAL NO APLICA COLORES CORRECTAMENTE
+                    # Aunque "funciona", los colores son incorrectos
+                    raise Exception("🎯 FORZANDO método RGB que genera colores EXACTOS")
                         
                 except Exception as e:
                     st.warning(f"⚠️ Método principal falló para {campana}: {e}")
