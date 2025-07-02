@@ -917,55 +917,33 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         except Exception as e:
             pass  # Si falla, continuar sin tiles
     
-    # 🔥 CONTORNO ULTRA VISIBLE - MÉTODO AGRESIVO
+    # 🔥 CONTORNO MEGA VISIBLE - MÉTODO SIMPLE Y DIRECTO
     try:
         aoi_geojson = aoi.getInfo()
-        if aoi_geojson:
-            # MÉTODO 1: LÍNEA NEGRA SÚPER GRUESA (base)
-            folium.GeoJson(
+        if aoi_geojson and 'features' in aoi_geojson:
+            # SOLO UNA LÍNEA SÚPER GRUESA Y BRILLANTE
+            contorno_campo = folium.GeoJson(
                 aoi_geojson,
-                name="",
-                style_function=lambda x: {
-                    "fillColor": "transparent",
-                    "color": "#000000", 
-                    "weight": 15,
-                    "fillOpacity": 0,
-                    "opacity": 1.0,
-                    "lineCap": "round",
-                    "lineJoin": "round"
-                }
-            ).add_to(m)
-            
-            # MÉTODO 2: LÍNEA AMARILLA NEÓN (contraste máximo)
-            folium.GeoJson(
-                aoi_geojson,
-                name="",
-                style_function=lambda x: {
-                    "fillColor": "transparent",
-                    "color": "#FFFF00", 
+                name="🔥 LÍMITE DEL CAMPO",
+                style_function=lambda feature: {
+                    "fillColor": "yellow",
+                    "color": "red", 
                     "weight": 10,
-                    "fillOpacity": 0,
+                    "fillOpacity": 0.1,
                     "opacity": 1.0,
-                    "lineCap": "round",
-                    "lineJoin": "round"
-                }
-            ).add_to(m)
+                    "dashArray": "10, 10"
+                },
+                tooltip="LÍMITE DEL ÁREA ANALIZADA",
+                popup="CAMPO ANALIZADO"
+            )
+            contorno_campo.add_to(m)
             
-            # MÉTODO 3: LÍNEA ROJA BRILLANTE (núcleo)
-            folium.GeoJson(
-                aoi_geojson,
-                name="🔥 Límite del Campo",
-                style_function=lambda x: {
-                    "fillColor": "transparent",
-                    "color": "#FF0000", 
-                    "weight": 5,
-                    "fillOpacity": 0,
-                    "opacity": 1.0,
-                    "lineCap": "round",
-                    "lineJoin": "round"
-                }
-            ).add_to(m)
+            # DEBUG: Imprimir info para verificar
+            print(f"✅ Contorno agregado: {len(aoi_geojson['features'])} features")
+        else:
+            print("❌ No se pudo obtener AOI geojson o no tiene features")
     except Exception as e:
+        print(f"❌ Error agregando contorno: {e}")
         pass
     
     # Crear leyenda con información de cultivos
@@ -1343,53 +1321,35 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
         # Agregar el grupo de características al mapa
         feature_group.add_to(m)
     
-    # 🔥 CONTORNO ULTRA VISIBLE - MÉTODO AGRESIVO (FALLBACK)
+    # 🔥 CONTORNO MEGA VISIBLE - MISMO MÉTODO (FALLBACK)
     try:
         # Obtener geometría del AOI como GeoJSON
         aoi_geojson = aoi.getInfo()
         
-        if aoi_geojson:
-            # LÍNEA NEGRA SÚPER GRUESA (base)
-            folium.GeoJson(
+        if aoi_geojson and 'features' in aoi_geojson:
+            # SOLO UNA LÍNEA SÚPER GRUESA Y BRILLANTE
+            contorno_campo = folium.GeoJson(
                 aoi_geojson,
-                name="",
-                style_function=lambda x: {
-                    "fillColor": "transparent",
-                    "color": "#000000",
-                    "weight": 15,
-                    "fillOpacity": 0,
-                    "opacity": 1.0
-                }
-            ).add_to(m)
-            
-            # LÍNEA AMARILLA NEÓN (contraste)
-            folium.GeoJson(
-                aoi_geojson,
-                name="",
-                style_function=lambda x: {
-                    "fillColor": "transparent",
-                    "color": "#FFFF00",
+                name="🔥 LÍMITE DEL CAMPO",
+                style_function=lambda feature: {
+                    "fillColor": "yellow",
+                    "color": "red", 
                     "weight": 10,
-                    "fillOpacity": 0,
-                    "opacity": 1.0
-                }
-            ).add_to(m)
-            
-            # LÍNEA ROJA BRILLANTE (núcleo)
-            folium.GeoJson(
-                aoi_geojson,
-                name="🔥 Límite del Campo",
-                style_function=lambda x: {
-                    "fillColor": "transparent",
-                    "color": "#FF0000",
-                    "weight": 5,
-                    "fillOpacity": 0,
-                    "opacity": 1.0
+                    "fillOpacity": 0.1,
+                    "opacity": 1.0,
+                    "dashArray": "10, 10"
                 },
-                tooltip="Límite del área analizada"
-            ).add_to(m)
+                tooltip="LÍMITE DEL ÁREA ANALIZADA",
+                popup="CAMPO ANALIZADO"
+            )
+            contorno_campo.add_to(m)
+            
+            print(f"✅ Contorno fallback agregado: {len(aoi_geojson['features'])} features")
+        else:
+            print("❌ Fallback: No se pudo obtener AOI geojson")
         
-    except:
+    except Exception as e:
+        print(f"❌ Error contorno fallback: {e}")
         pass
     
     # Agregar control de capas
@@ -1430,40 +1390,13 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
     return m
 
 def main():
-    # 🎨 LOGO VISU CENTRAL Y PROMINENTE
-    st.markdown("""
-    <div style="text-align: center; padding: 4rem 2rem; 
-                background: linear-gradient(135deg, #0D0D0D, #1a1a1a, #0D0D0D); 
-                margin: -1rem -1rem 3rem -1rem; 
-                border-radius: 0 0 30px 30px;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-        
-        <h1 style="color: #FFFFFF; font-size: 5rem; font-weight: 100; 
-                   letter-spacing: 30px; margin: 0 0 1rem 0; 
-                   text-shadow: 0 0 40px rgba(45, 212, 191, 0.8);
-                   font-family: 'Helvetica Neue', Arial, sans-serif;">
-            V I S U
-        </h1>
-        
-        <div style="width: 400px; height: 3px; 
-                    background: linear-gradient(90deg, transparent, #2DD4BF, transparent); 
-                    margin: 0 auto 1.5rem auto; border-radius: 3px;"></div>
-        
-        <p style="color: #2DD4BF; font-size: 1.3rem; font-weight: 300; 
-                  letter-spacing: 4px; margin: 0 0 1rem 0;">
-            VISUALIZE WITH SUPERPOWERS
-        </p>
-        
-        <h2 style="color: #B8BFC7; font-size: 1.8rem; font-weight: 300; 
-                   margin: 2rem 0 0 0;">
-            Análisis de Rotación de Cultivos
-        </h2>
-        
-        <p style="color: #888; font-size: 1rem; margin: 0.5rem 0 0 0;">
-            Sube tus archivos KMZ y obtén análisis detallado
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    # 🎨 LOGO VISU SÚPER SIMPLE QUE FUNCIONA
+    st.markdown("")
+    st.markdown("# 🎯 V  I  S  U")
+    st.markdown("### ✨ VISUALIZE WITH SUPERPOWERS")
+    st.markdown("## 🌾 Análisis de Rotación de Cultivos")
+    st.markdown("📄 *Sube tus archivos KMZ y obtén análisis detallado*")
+    st.markdown("---")
     
     # CSS Responsive para móviles
     st.markdown("""
