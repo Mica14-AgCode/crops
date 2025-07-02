@@ -377,8 +377,10 @@ def analizar_cultivos_web(aoi):
                 
                 capas[campana] = capa_combinada
                 
-                # 🎨 GENERAR TILES CON PALETA GARANTIZADA
+                # 🎨 FORZAR MÉTODO RGB ALTERNATIVO (el que SÍ funciona)
                 try:
+                    # 🔧 FORZAR ERROR para usar método RGB - PERMANENTE
+                    raise Exception("🎯 FORZANDO método RGB que SÍ funciona correctamente")
                     
                     # Parámetros optimizados para evitar fallos
                     vis_params = {
