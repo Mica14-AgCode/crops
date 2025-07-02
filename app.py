@@ -681,18 +681,21 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         control=True
     ).add_to(m)
     
-    # Agregar tiles de Earth Engine para la campaña seleccionada
+    # Agregar tiles de Earth Engine para la campaña seleccionada CON CONTROL DE TRANSPARENCIA
     if campana_seleccionada in tiles_urls and tiles_urls[campana_seleccionada]:
         try:
-            folium.raster_layers.TileLayer(
-                tiles=tiles_urls[campana_seleccionada],
-                attr='Google Earth Engine',
-                name=f'Cultivos {campana_seleccionada}',
-                overlay=True,
-                control=True,
-                opacity=0.7
-            ).add_to(m)
-        except:
+            # Crear capa de cultivos con diferentes niveles de transparencia
+            for opacity_level, opacity_name in [(0.9, "Opaco"), (0.7, "Normal"), (0.5, "Medio"), (0.3, "Transparente")]:
+                folium.raster_layers.TileLayer(
+                    tiles=tiles_urls[campana_seleccionada],
+                    attr='Google Earth Engine',
+                    name=f'Cultivos {campana_seleccionada} ({opacity_name})',
+                    overlay=True,
+                    control=True,
+                    opacity=opacity_level
+                ).add_to(m)
+        except Exception as e:
+            st.warning(f"Error agregando tiles: {e}")
             pass  # Si falla, continuar sin tiles
     
     # Agregar contorno del AOI de forma segura
@@ -758,29 +761,37 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
             except:
                 area_total_campana = 0
             
-            # Crear leyenda HTML
+            # Crear leyenda HTML MEJORADA con CSS más fuerte
             legend_html = f"""
-            <div style="position: fixed; 
-                        top: 10px; right: 10px; width: 280px;
-                        background-color: rgba(255, 255, 255, 0.95); 
-                        z-index: 1000; 
-                        border: 2px solid #2E8B57; 
-                        border-radius: 8px;
-                        padding: 12px; 
-                        font-family: Arial, sans-serif;
-                        box-shadow: 0 4px 8px rgba(0,0,0,0.5);
-                        max-height: 80vh; 
-                        overflow-y: auto;">
+            <div id="legend-cultivos" style="position: fixed !important; 
+                        top: 10px !important; right: 10px !important; 
+                        width: 300px !important; min-width: 300px !important;
+                        background-color: rgba(255, 255, 255, 0.98) !important; 
+                        z-index: 9999 !important; 
+                        border: 3px solid #2E8B57 !important; 
+                        border-radius: 10px !important;
+                        padding: 15px !important; 
+                        font-family: Arial, sans-serif !important;
+                        box-shadow: 0 8px 16px rgba(0,0,0,0.7) !important;
+                        max-height: 85vh !important; 
+                        overflow-y: auto !important;
+                        backdrop-filter: blur(2px) !important;">
                         
-            <h4 style="margin: 0 0 10px 0; text-align: center; 
-                       background-color: #2E8B57; color: white; 
-                       padding: 8px; border-radius: 4px; font-size: 14px;">
-                🌾 Campaña {campana_seleccionada}
+            <h4 style="margin: 0 0 12px 0 !important; text-align: center !important; 
+                       background: linear-gradient(135deg, #2E8B57, #3CB371) !important; 
+                       color: white !important; 
+                       padding: 10px !important; border-radius: 6px !important; 
+                       font-size: 15px !important; font-weight: bold !important;
+                       text-shadow: 1px 1px 2px rgba(0,0,0,0.3) !important;">
+                🌾 Cultivos - Campaña {campana_seleccionada}
             </h4>
             
-            <div style="margin-bottom: 12px; padding: 6px; background-color: #f0f8ff; 
-                        border-radius: 4px; text-align: center; font-weight: bold; font-size: 12px;">
-                Total: {area_total_campana:.0f} hectáreas
+            <div style="margin-bottom: 15px !important; padding: 8px !important; 
+                        background: linear-gradient(135deg, #f0f8ff, #e6f3ff) !important; 
+                        border-radius: 6px !important; text-align: center !important; 
+                        font-weight: bold !important; font-size: 13px !important;
+                        border: 1px solid #4682B4 !important;">
+                📊 Área Total: {area_total_campana:.0f} hectáreas
             </div>
             """
             
@@ -799,18 +810,28 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
                         bg_color = '#f9f9f9' if idx % 2 == 0 else '#ffffff'
                         
                         legend_html += f"""
-                        <div style="display: flex; align-items: center; margin: 6px 0; 
-                                    padding: 6px; background-color: {bg_color};
-                                    border-radius: 4px; border-left: 3px solid {color};">
-                            <div style="width: 20px; height: 15px; background-color: {color}; 
-                                        margin-right: 8px; border: 1px solid #333;
-                                        border-radius: 2px; flex-shrink: 0;"></div>
-                            <div style="flex-grow: 1; font-size: 11px;">
-                                <div style="font-weight: bold; color: #333; line-height: 1.2;">
+                        <div style="display: flex !important; align-items: center !important; 
+                                    margin: 8px 0 !important; padding: 8px !important; 
+                                    background-color: {bg_color} !important;
+                                    border-radius: 6px !important; 
+                                    border-left: 4px solid {color} !important;
+                                    border: 1px solid #e0e0e0 !important;
+                                    transition: all 0.2s ease !important;">
+                            <div style="width: 24px !important; height: 18px !important; 
+                                        background-color: {color} !important; 
+                                        margin-right: 10px !important; 
+                                        border: 2px solid #333 !important;
+                                        border-radius: 3px !important; 
+                                        flex-shrink: 0 !important;
+                                        box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;"></div>
+                            <div style="flex-grow: 1 !important; font-size: 12px !important;">
+                                <div style="font-weight: bold !important; color: #2c3e50 !important; 
+                                            line-height: 1.3 !important; margin-bottom: 2px !important;">
                                     {cultivo}
                                 </div>
-                                <div style="color: #666; line-height: 1.2;">
-                                    {area:.0f} ha ({porcentaje:.1f}%)
+                                <div style="color: #5a6c7d !important; line-height: 1.2 !important;
+                                            font-size: 11px !important; font-weight: 500 !important;">
+                                    🌾 {area:.0f} ha • {porcentaje:.1f}%
                                 </div>
                             </div>
                         </div>
@@ -825,13 +846,29 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
                 </div>
                 """
             
-            # Pie de la leyenda
+            # Pie de la leyenda con explicación de colores
             legend_html += """
-            <div style="margin-top: 10px; padding-top: 8px; 
-                        border-top: 1px solid #2E8B57; font-size: 10px; 
-                        color: #666; text-align: center;">
-                📡 Google Earth Engine<br>
-                🛰️ Mapa Nacional de Cultivos
+            <div style="margin-top: 15px !important; padding: 10px !important; 
+                        border-top: 2px solid #2E8B57 !important; 
+                        background: linear-gradient(135deg, #f8f9fa, #e9ecef) !important;
+                        border-radius: 6px !important; font-size: 10px !important; 
+                        color: #495057 !important; text-align: center !important;">
+                
+                <div style="margin-bottom: 8px !important; font-weight: bold !important; 
+                            color: #2E8B57 !important; font-size: 11px !important;">
+                    📡 Google Earth Engine • 🛰️ Mapa Nacional de Cultivos
+                </div>
+                
+                <div style="font-size: 9px !important; color: #6c757d !important; 
+                            line-height: 1.3 !important; font-style: italic !important;">
+                    ⚠️ Los colores en el mapa pueden diferir de esta leyenda.<br>
+                    Los colores exactos están en el gráfico de rotación ⬇️
+                </div>
+                
+                <div style="margin-top: 8px !important; font-size: 9px !important; 
+                            color: #495057 !important; font-weight: 500 !important;">
+                    💡 Usa el control de capas para cambiar transparencia
+                </div>
             </div>
             </div>
             """
@@ -847,32 +884,49 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
     if not legend_added:
         try:
             basic_legend = f"""
-            <div style="position: fixed; top: 10px; right: 10px; width: 250px;
-                        background-color: rgba(255, 255, 255, 0.95); z-index: 1000; 
-                        border: 2px solid #2E8B57; border-radius: 8px; padding: 12px; 
-                        font-family: Arial, sans-serif; box-shadow: 0 4px 8px rgba(0,0,0,0.5);">
-                <h4 style="margin: 0 0 10px 0; text-align: center; 
-                           background-color: #2E8B57; color: white; 
-                           padding: 8px; border-radius: 4px; font-size: 14px;">
-                    🌾 Campaña {campana_seleccionada}
+            <div style="position: fixed !important; top: 10px !important; right: 10px !important; 
+                        width: 280px !important; background-color: rgba(255, 255, 255, 0.98) !important; 
+                        z-index: 9999 !important; border: 3px solid #dc3545 !important; 
+                        border-radius: 10px !important; padding: 15px !important; 
+                        font-family: Arial, sans-serif !important; 
+                        box-shadow: 0 8px 16px rgba(0,0,0,0.7) !important;">
+                        
+                <h4 style="margin: 0 0 12px 0 !important; text-align: center !important; 
+                           background: linear-gradient(135deg, #dc3545, #c82333) !important; 
+                           color: white !important; padding: 10px !important; 
+                           border-radius: 6px !important; font-size: 15px !important;">
+                    ⚠️ Campaña {campana_seleccionada}
                 </h4>
-                <div style="margin-bottom: 12px; padding: 6px; background-color: #f0f8ff; 
-                            border-radius: 4px; text-align: center; font-weight: bold; font-size: 12px;">
-                    Cultivos procesados con éxito
+                
+                <div style="margin-bottom: 15px !important; padding: 10px !important; 
+                            background: linear-gradient(135deg, #fff3cd, #ffeaa7) !important; 
+                            border-radius: 6px !important; text-align: center !important; 
+                            font-weight: bold !important; font-size: 13px !important;
+                            border: 1px solid #ffc107 !important; color: #856404 !important;">
+                    🔄 Cargando información de cultivos...
                 </div>
-                <div style="text-align: center; color: #666; padding: 10px;">
-                    Los datos de cultivos están<br>disponibles en el análisis
+                
+                <div style="text-align: center !important; color: #495057 !important; 
+                            padding: 15px !important; font-size: 12px !important; 
+                            line-height: 1.4 !important;">
+                    Los datos de cultivos están<br>
+                    disponibles en el análisis.<br><br>
+                    📊 Consulta el gráfico de rotación<br>
+                    para ver los colores exactos.
                 </div>
-                <div style="margin-top: 10px; padding-top: 8px; 
-                            border-top: 1px solid #2E8B57; font-size: 10px; 
-                            color: #666; text-align: center;">
-                    📡 Google Earth Engine<br>
-                    🛰️ Mapa Nacional de Cultivos
+                
+                <div style="margin-top: 15px !important; padding: 10px !important; 
+                            border-top: 2px solid #dc3545 !important; font-size: 10px !important; 
+                            color: #6c757d !important; text-align: center !important;
+                            background: linear-gradient(135deg, #f8f9fa, #e9ecef) !important;
+                            border-radius: 6px !important;">
+                    📡 Google Earth Engine • 🛰️ Mapa Nacional de Cultivos
                 </div>
             </div>
             """
             m.get_root().html.add_child(folium.Element(basic_legend))
-        except:
+        except Exception as e:
+            st.warning(f"Error creando leyenda de respaldo: {e}")
             pass
     
     # Control de capas
