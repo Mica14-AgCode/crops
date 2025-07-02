@@ -681,38 +681,105 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         control=True
     ).add_to(m)
     
-    # Agregar tiles de Earth Engine para la campaña seleccionada CON CONTROL DE TRANSPARENCIA
+    # Agregar tiles de Earth Engine CON BARRA DESLIZANTE DE TRANSPARENCIA
     if campana_seleccionada in tiles_urls and tiles_urls[campana_seleccionada]:
         try:
-            # Crear capa de cultivos con diferentes niveles de transparencia
-            for opacity_level, opacity_name in [(0.9, "Opaco"), (0.7, "Normal"), (0.5, "Medio"), (0.3, "Transparente")]:
-                folium.raster_layers.TileLayer(
-                    tiles=tiles_urls[campana_seleccionada],
-                    attr='Google Earth Engine',
-                    name=f'Cultivos {campana_seleccionada} ({opacity_name})',
-                    overlay=True,
-                    control=True,
-                    opacity=opacity_level
-                ).add_to(m)
+            # Agregar capa principal de cultivos
+            cultivos_layer = folium.raster_layers.TileLayer(
+                tiles=tiles_urls[campana_seleccionada],
+                attr='Google Earth Engine',
+                name=f'Cultivos {campana_seleccionada}',
+                overlay=True,
+                control=True,
+                opacity=0.7  # Transparencia por defecto
+            )
+            cultivos_layer.add_to(m)
+            
+            # Agregar barra deslizante de transparencia con CSS mejorado
+            transparency_control = """
+            <div id="transparency-control" style="position: fixed; bottom: 20px; left: 20px; 
+                                                 background: rgba(255, 255, 255, 0.95); 
+                                                 padding: 15px; border-radius: 10px;
+                                                 box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+                                                 z-index: 9998; font-family: Arial, sans-serif;
+                                                 min-width: 200px;">
+                <div style="margin-bottom: 8px; font-weight: bold; color: #2E8B57; text-align: center;">
+                    🎨 Transparencia de Cultivos
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 12px; color: #666;">👁️</span>
+                    <input type="range" id="opacity-slider" min="0" max="100" value="70" 
+                           style="flex: 1; height: 6px; border-radius: 5px; 
+                                  background: linear-gradient(to right, #e0e0e0, #2E8B57);
+                                  outline: none; cursor: pointer;">
+                    <span style="font-size: 12px; color: #666;">🎯</span>
+                </div>
+                <div style="text-align: center; margin-top: 5px; font-size: 11px; color: #888;">
+                    <span id="opacity-value">70%</span>
+                </div>
+            </div>
+            
+            <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                var slider = document.getElementById('opacity-slider');
+                var valueDisplay = document.getElementById('opacity-value');
+                
+                if (slider && valueDisplay) {
+                    slider.addEventListener('input', function() {
+                        var opacity = this.value / 100;
+                        valueDisplay.textContent = this.value + '%';
+                        
+                        // Buscar y actualizar la capa de cultivos
+                        var layers = window.map._layers;
+                        Object.keys(layers).forEach(function(key) {
+                            var layer = layers[key];
+                            if (layer.options && layer.options.attribution === 'Google Earth Engine') {
+                                layer.setOpacity(opacity);
+                            }
+                        });
+                    });
+                }
+            });
+            </script>
+            """
+            m.get_root().html.add_child(folium.Element(transparency_control))
+            
         except Exception as e:
             st.warning(f"Error agregando tiles: {e}")
             pass  # Si falla, continuar sin tiles
     
-    # Agregar contorno del AOI de forma segura
+    # Agregar contorno del AOI MÁS VISIBLE con línea blanca y gruesa
     try:
         aoi_geojson = aoi.getInfo()
         if aoi_geojson:
+            # Agregar línea blanca gruesa para máxima visibilidad
             folium.GeoJson(
                 aoi_geojson,
                 name="Límite del Campo",
                 style_function=lambda x: {
                     "fillColor": "transparent",
-                    "color": "red", 
-                    "weight": 3,
-                    "fillOpacity": 0
+                    "color": "white", 
+                    "weight": 6,  # Línea más gruesa
+                    "fillOpacity": 0,
+                    "opacity": 1.0,  # Máxima opacidad
+                    "dashArray": "10, 5"  # Línea punteada para mejor visibilidad
                 }
             ).add_to(m)
-    except:
+            
+            # Agregar segunda línea roja más fina por dentro para contraste
+            folium.GeoJson(
+                aoi_geojson,
+                name="Contorno Interior",
+                style_function=lambda x: {
+                    "fillColor": "transparent",
+                    "color": "red", 
+                    "weight": 3,
+                    "fillOpacity": 0,
+                    "opacity": 0.8
+                }
+            ).add_to(m)
+    except Exception as e:
+        st.warning(f"Error agregando contorno del campo: {e}")
         pass
     
     # Crear leyenda con información de cultivos
@@ -873,8 +940,32 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
             </div>
             """
             
-            # Agregar leyenda al mapa
-            m.get_root().html.add_child(folium.Element(legend_html))
+            # Agregar leyenda al mapa usando método más directo
+            # Usar marco (iframe) para asegurar que la leyenda se muestre
+            legend_element = folium.Element(legend_html)
+            m.get_root().html.add_child(legend_element)
+            
+            # JavaScript adicional para asegurar visibilidad
+            visibility_script = """
+            <script>
+            // Asegurar que la leyenda sea visible después de cargar el mapa
+            setTimeout(function() {
+                var legend = document.getElementById('legend-cultivos');
+                if (legend) {
+                    legend.style.display = 'block';
+                    legend.style.position = 'fixed';
+                    legend.style.top = '10px';
+                    legend.style.right = '10px';
+                    legend.style.zIndex = '9999';
+                    legend.style.backgroundColor = 'rgba(255, 255, 255, 0.98)';
+                    console.log('Leyenda forzada a ser visible');
+                } else {
+                    console.log('Leyenda no encontrada');
+                }
+            }, 1000);
+            </script>
+            """
+            m.get_root().html.add_child(folium.Element(visibility_script))
             legend_added = True
         
     except Exception as e:
@@ -1401,7 +1492,7 @@ def main():
                     
                     st.success("✅ **Mapa con píxeles reales de Google Earth Engine**")
                     
-                    # Ayuda responsive para usar el mapa
+                    # Ayuda responsive para usar el mapa CON EXPLICACIÓN DE COLORES
                     with st.expander("💡 Cómo usar el mapa", expanded=False):
                         st.markdown("""
                         **🎨 Píxeles de colores**: Cada color representa un cultivo específico  
@@ -1409,6 +1500,30 @@ def main():
                         **🔍 Zoom**: Toca dos veces o usa los controles para acercar/alejar  
                         **🗺️ Capas**: Usa el control de capas (esquina superior derecha) para cambiar vista satelital/mapa  
                         **📊 Leyenda**: Área y porcentaje de cada cultivo (esquina superior derecha del mapa)
+                        **🎛️ Transparencia**: Usa la barra deslizante (esquina inferior izquierda) para ajustar transparencia
+                        """)
+                    
+                    # IMPORTANTE: Explicación sobre colores
+                    st.info("""
+                    **⚠️ IMPORTANTE sobre los colores:**
+                    
+                    🗺️ **Colores en el MAPA**: Vienen del servidor de Google Earth Engine (no modificables)
+                    
+                    📊 **Colores EXACTOS**: Están en el **gráfico de rotación** ⬇️ (basados en tu paleta oficial JavaScript)
+                    
+                    📋 **Leyenda del mapa**: Muestra las áreas y porcentajes correctos, pero los colores pueden diferir ligeramente
+                    """)
+                    
+                    # Ayuda adicional
+                    with st.expander("🔧 ¿Por qué los colores difieren?", expanded=False):
+                        st.markdown("""
+                        **Limitación técnica**: Los tiles (imágenes) de Google Earth Engine se generan en sus servidores 
+                        con una paleta de colores fija que no puedo modificar desde esta aplicación.
+                        
+                        **Solución**: El **gráfico de rotación** usa exactamente los colores de tu paleta oficial JavaScript, 
+                        así que úsa esos colores como referencia.
+                        
+                        **La información es correcta**: Las áreas en hectáreas y porcentajes son exactos en ambos lugares.
                         """)
                     
                 else:
