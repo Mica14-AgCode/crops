@@ -1861,10 +1861,10 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
                     inundacion_data = obtener_datos_inundacion_año(geometry, fecha_inicio, fecha_fin)
                     
                     if inundacion_data:
-                        # Procesar datos de inundación - ARREGLAR ERROR DE GEOMETRY.AREA
-                        area_total = geometry.area(maxError=10).getInfo() / 10000  # Convertir a hectáreas
+                        # Procesar datos de inundación - USAR ÁREA CALCULADA CORRECTAMENTE
+                        area_total = inundacion_data.get('area_total_ha', 0)  # Usar área ya calculada
                         area_inundada = inundacion_data.get('area_inundada_ha', 0)
-                        porcentaje_inundacion = (area_inundada / area_total * 100) if area_total > 0 else 0
+                        porcentaje_inundacion = inundacion_data.get('porcentaje_inundacion', 0)  # Usar % ya calculado
                         
                         resultados_por_año[año] = {
                             'area_total_ha': area_total,
@@ -1951,51 +1951,88 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
 def obtener_datos_inundacion_año(geometry, fecha_inicio, fecha_fin):
     """
     Obtiene datos de inundación para un año específico
-    Combina datos de Sentinel-1 (radar para detección de agua)
+    ANÁLISIS EXPLICADO PASO A PASO:
+    
+    1. Busca imágenes Sentinel-1 (radar) del área y período
+    2. Detecta agua usando umbral -18 dB en banda VH
+    3. Calcula frecuencia de agua en cada píxel
+    4. Cuenta píxeles con agua >30% del tiempo
+    5. Convierte píxeles a hectáreas DENTRO del polígono
     """
     try:
-        # Colección de Sentinel-1 (radar, detecta agua)
+        st.write(f"🔍 **Analizando período**: {fecha_inicio} a {fecha_fin}")
+        
+        # PASO 1: Obtener imágenes Sentinel-1 (radar)
         s1_collection = ee.ImageCollection("COPERNICUS/S1_GRD") \
             .filterBounds(geometry) \
             .filterDate(fecha_inicio, fecha_fin) \
             .filter(ee.Filter.eq('instrumentMode', 'IW')) \
             .filter(ee.Filter.eq('orbitProperties_pass', 'DESCENDING'))
         
-        if s1_collection.size().getInfo() > 0:
-            # Procesar imágenes Sentinel-1
+        num_imagenes = s1_collection.size().getInfo()
+        st.write(f"📡 **Imágenes Sentinel-1 encontradas**: {num_imagenes}")
+        
+        if num_imagenes > 0:
+            # PASO 2: Procesar cada imagen para detectar agua
             s1_agua = s1_collection.map(lambda img: procesar_sentinel1_agua(img))
             
-            # Obtener máscara de agua más frecuente
+            # PASO 3: Calcular frecuencia de agua (promedio temporal)
             agua_frecuencia = s1_agua.mean()
             umbral_agua = 0.3  # 30% de frecuencia mínima
+            st.write(f"💧 **Umbral de detección**: Píxeles con agua >{umbral_agua*100}% del tiempo")
             
+            # PASO 4: Crear máscara de agua persistente
             mascara_agua = agua_frecuencia.gt(umbral_agua)
             
-            # Calcular área inundada
-            stats = mascara_agua.reduceRegion(
+            # PASO 5: CALCULAR ÁREA CORRECTAMENTE
+            # Primero obtener área total del polígono como referencia
+            area_total_m2 = geometry.area(maxError=10).getInfo()
+            area_total_ha = area_total_m2 / 10000
+            st.write(f"📏 **Área total del polígono**: {area_total_ha:.1f} ha")
+            
+            # Ahora calcular área de píxeles de agua DENTRO del polígono
+            # Usar clipToCollection para asegurar que solo cuenta píxeles dentro
+            mascara_agua_clipped = mascara_agua.clip(geometry)
+            
+            # Calcular estadísticas con escala apropiada
+            stats = mascara_agua_clipped.reduceRegion(
                 reducer=ee.Reducer.sum(),
                 geometry=geometry,
-                scale=100,  # Escala más gruesa para evitar errores
-                maxPixels=1e10,  # Más píxeles permitidos
-                bestEffort=True  # Mejor esfuerzo si hay limitaciones
+                scale=30,  # Escala nativa de Sentinel-1 (mejor precisión)
+                maxPixels=1e10,
+                bestEffort=True
             )
             
             pixeles_agua = stats.getInfo().get('agua', 0)
-            area_inundada_ha = pixeles_agua * 100 * 100 / 10000  # Convertir a hectáreas (escala 100m)
+            area_inundada_ha = pixeles_agua * 30 * 30 / 10000  # Convertir a hectáreas
+            
+            # CONTROL DE CALIDAD: El área inundada NO puede ser mayor que el área total
+            if area_inundada_ha > area_total_ha:
+                st.warning(f"⚠️ **Corrección aplicada**: Área inundada calculada ({area_inundada_ha:.1f} ha) > Área total ({area_total_ha:.1f} ha)")
+                # Aplicar corrección: máximo 95% del área total
+                area_inundada_ha = min(area_inundada_ha, area_total_ha * 0.95)
+                st.write(f"🔧 **Área corregida**: {area_inundada_ha:.1f} ha")
+            
+            porcentaje_inundacion = (area_inundada_ha / area_total_ha * 100) if area_total_ha > 0 else 0
+            st.write(f"📊 **Resultado**: {area_inundada_ha:.1f} ha inundada ({porcentaje_inundacion:.1f}%)")
             
             # Contar eventos (imágenes con agua detectada)
-            frecuencia_eventos = s1_collection.size().getInfo()
+            frecuencia_eventos = num_imagenes
             
             return {
                 'area_inundada_ha': area_inundada_ha,
+                'area_total_ha': area_total_ha,  # Incluir área total para referencia
                 'frecuencia_eventos': frecuencia_eventos,
-                'duracion_maxima': frecuencia_eventos * 12  # Estimación basada en revisitas
+                'duracion_maxima': frecuencia_eventos * 12,  # Estimación basada en revisitas
+                'porcentaje_inundacion': porcentaje_inundacion,
+                'num_imagenes': num_imagenes
             }
         else:
+            st.warning(f"⚠️ **Sin datos**: No hay imágenes Sentinel-1 para el período {fecha_inicio} - {fecha_fin}")
             return None
             
     except Exception as e:
-        print(f"Error obteniendo datos de inundación: {str(e)}")
+        st.error(f"❌ **Error procesando {fecha_inicio}**: {str(e)}")
         return None
 
 def procesar_sentinel1_agua(imagen):
@@ -2172,26 +2209,32 @@ def main():
     
     with tabs[0]:
         mostrar_analisis_kmz()
-        # MOSTRAR RESULTADOS DENTRO DE LA PESTAÑA KMZ
+        # MOSTRAR RESULTADOS DENTRO DE LA PESTAÑA KMZ SEGÚN SUB-PESTAÑA ACTIVA
         if st.session_state.analisis_completado and st.session_state.resultados_analisis:
             if st.session_state.resultados_analisis.get('fuente') == 'KMZ':
                 # Verificar el tipo de análisis para mostrar los resultados apropiados
                 tipo_analisis = st.session_state.resultados_analisis.get('tipo_analisis', 'cultivos')
-                if tipo_analisis == 'cultivos':
+                sub_pestana = st.session_state.resultados_analisis.get('sub_pestana', 'cultivos')
+                
+                # Solo mostrar si estamos en la sub-pestaña correcta
+                if tipo_analisis == 'cultivos' and sub_pestana == 'cultivos':
                     mostrar_resultados_analisis()
-                elif tipo_analisis == 'inundacion':
+                elif tipo_analisis == 'inundacion' and sub_pestana == 'inundacion':
                     mostrar_resultados_inundacion()
     
     with tabs[1]:
         mostrar_analisis_cuit()
-        # MOSTRAR RESULTADOS DENTRO DE LA PESTAÑA CUIT
+        # MOSTRAR RESULTADOS DENTRO DE LA PESTAÑA CUIT SEGÚN SUB-PESTAÑA ACTIVA
         if st.session_state.analisis_completado and st.session_state.resultados_analisis:
             if st.session_state.resultados_analisis.get('fuente') == 'CUIT':
                 # Verificar el tipo de análisis para mostrar los resultados apropiados
                 tipo_analisis = st.session_state.resultados_analisis.get('tipo_analisis', 'cultivos')
-                if tipo_analisis == 'cultivos':
+                sub_pestana = st.session_state.resultados_analisis.get('sub_pestana', 'cultivos')
+                
+                # Solo mostrar si estamos en la sub-pestaña correcta
+                if tipo_analisis == 'cultivos' and sub_pestana == 'cultivos':
                     mostrar_resultados_analisis()
-                elif tipo_analisis == 'inundacion':
+                elif tipo_analisis == 'inundacion' and sub_pestana == 'inundacion':
                     mostrar_resultados_inundacion()
     
     st.markdown("---")
@@ -2296,7 +2339,8 @@ def mostrar_analisis_cultivos_kmz():
                         'aoi': aoi,
                         'archivo_info': f"{len(uploaded_files)} archivo(s) - {len(todos_los_poligonos)} polígonos",
                         'nombres_archivos': nombres_archivos,  # Guardar nombres para descargas
-                        'fuente': 'KMZ'  # Identificar fuente
+                        'fuente': 'KMZ',  # Identificar fuente
+                        'sub_pestana': 'cultivos'  # Identificar sub-pestaña
                     }
                     st.session_state.analisis_completado = True
                     st.success("🎉 ¡Análisis completado exitosamente!")
@@ -2333,6 +2377,50 @@ def mostrar_analisis_inundacion_kmz():
         </p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # EXPLICACIÓN DETALLADA DEL ANÁLISIS
+    with st.expander("🔬 **¿Cómo funciona el análisis de riesgo hídrico?**", expanded=False):
+        st.markdown("""
+        ### 📡 **DATOS UTILIZADOS**
+        - **Fuente**: Imágenes radar **Sentinel-1** de la Agencia Espacial Europea
+        - **Período**: 2005-2025 (excluye 2014 por falta de datos)
+        - **Frecuencia**: Revisita cada 6-12 días
+        - **Resolución**: 30 metros por píxel
+        
+        ### 🔍 **PROCESO DE ANÁLISIS PASO A PASO**
+        
+        **1. 📡 Búsqueda de imágenes**
+        - Se buscan todas las imágenes Sentinel-1 del área y período seleccionado
+        - Se filtran por modo instrumental (IW) y órbita descendente
+        
+        **2. 💧 Detección de agua**
+        - Se usa la banda VH (polarización vertical-horizontal) del radar
+        - **Umbral**: -18 dB (valores más bajos = agua)
+        - El radar "ve" a través de nubes y funciona día/noche
+        
+        **3. 📊 Cálculo de frecuencia**
+        - Se calcula cuántas veces cada píxel tuvo agua durante el año
+        - **Criterio**: Píxeles con agua >30% del tiempo = "inundación persistente"
+        
+        **4. 📏 Cálculo de área**
+        - Se cuentan píxeles inundados DENTRO del polígono únicamente
+        - Se convierte a hectáreas: píxeles × 30m × 30m ÷ 10,000
+        - **Control de calidad**: Área inundada ≤ Área total
+        
+        **5. 🎯 Clasificación de riesgo**
+        - **Bajo** (<10%): Riesgo mínimo
+        - **Medio** (10-25%): Atención preventiva  
+        - **Alto** (25-50%): Medidas urgentes
+        - **Muy Alto** (>50%): Cambio de uso recomendado
+        
+        ### 🎨 **VISUALIZACIÓN**
+        - **Gráfico temporal**: Evolución por año
+        - **Mapa interactivo**: Píxeles de agua en azul
+        - **Eventos significativos**: Años críticos destacados
+        - **Recomendaciones**: Específicas según nivel de riesgo
+        """)
+    
+    st.markdown("---")
     
     uploaded_files_inund = st.file_uploader(
         "🌊 Selecciona tus archivos KMZ",
@@ -2411,6 +2499,7 @@ def mostrar_analisis_inundacion_kmz():
                         'archivo_info': f"{len(uploaded_files_inund)} archivo(s) - {len(todos_los_poligonos)} polígonos",
                         'nombres_archivos': nombres_archivos,
                         'fuente': 'KMZ',
+                        'sub_pestana': 'inundacion',  # Identificar sub-pestaña
                         'config_analisis': {
                             'anos_analisis': anos_analisis,
                             'umbral_inundacion': umbral_inundacion
@@ -2562,11 +2651,13 @@ def mostrar_analisis_cultivos_cuit():
                                 # GUARDAR RESULTADOS INDIVIDUALES EN SESSION STATE
                                 st.session_state.resultados_analisis = {
                                     'tipo': 'individual',
+                                    'tipo_analisis': 'cultivos',
                                     'resultados_individuales': resultados_individuales,
                                     'campo_principal': campo_mas_grande,
                                     'total_campos': len(resultados_individuales),
                                     'superficie_total': sum(r['campo_superficie'] for r in resultados_individuales),
-                                    'fuente': 'CUIT_INDIVIDUAL',
+                                    'fuente': 'CUIT',
+                                    'sub_pestana': 'cultivos',  # Identificar sub-pestaña
                                     'cuit_info': {
                                         'cuit': cuit_input,
                                         'campos_encontrados': len(poligonos_data),
@@ -2617,6 +2708,7 @@ def mostrar_analisis_cultivos_cuit():
                                 # GUARDAR TODO EN SESSION STATE
                                 st.session_state.resultados_analisis = {
                                     'tipo': 'general',
+                                    'tipo_analisis': 'cultivos',
                                     'df_cultivos': df_cultivos,
                                     'area_total': area_total,
                                     'tiles_urls': tiles_urls,
@@ -2625,6 +2717,7 @@ def mostrar_analisis_cultivos_cuit():
                                     'archivo_info': f"CUIT: {cuit_input} - {len(poligonos_data)} campos",
                                     'nombres_archivos': [f"CUIT_{normalizar_cuit(cuit_input).replace('-', '')}"],
                                     'fuente': 'CUIT',  # Identificar fuente
+                                    'sub_pestana': 'cultivos',  # Identificar sub-pestaña
                                     'cuit_info': {
                                         'cuit': cuit_input,
                                         'campos_encontrados': len(poligonos_data),
@@ -2748,6 +2841,7 @@ def mostrar_analisis_inundacion_cuit():
                             'archivo_info': f"CUIT: {cuit_input} - {len(poligonos_data)} campos",
                             'nombres_archivos': [f"CUIT_{normalizar_cuit(cuit_input).replace('-', '')}_inundacion"],
                             'fuente': 'CUIT',
+                            'sub_pestana': 'inundacion',  # Identificar sub-pestaña
                             'config_analisis': {
                                 'anos_analisis': anos_analisis,
                                 'umbral_inundacion': umbral_inundacion
