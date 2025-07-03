@@ -1786,6 +1786,8 @@ def main():
         st.session_state.resultados_analisis = None
     if 'analisis_completado' not in st.session_state:
         st.session_state.analisis_completado = False
+    if 'tab_activa' not in st.session_state:
+        st.session_state.tab_activa = 0
     
     if 'ee_initialized' not in st.session_state:
         with st.spinner("Inicializando Google Earth Engine..."):
@@ -1901,7 +1903,19 @@ def mostrar_analisis_kmz():
                     }
                     st.session_state.analisis_completado = True
                     st.success("🎉 ¡Análisis completado exitosamente!")
-                    st.rerun()  # Refrescar para mostrar resultados
+                    # SIN RERUN para mantener la pestaña activa
+                    st.info("📋 Los resultados aparecerán abajo.")
+                    
+                    # Mostrar resumen rápido en la misma pestaña
+                    st.markdown("### 📊 Resumen Rápido")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Área Total", f"{area_total:,.1f} ha")
+                    with col2:
+                        cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
+                        st.metric("Cultivos", f"{cultivos_detectados:,}")
+                    with col3:
+                        st.metric("Archivo", f"{len(uploaded_files)} KMZ")
                 else:
                     st.error("❌ No se pudieron analizar los cultivos")
                     st.session_state.analisis_completado = False
@@ -1916,7 +1930,7 @@ def mostrar_analisis_cuit():
             🔍 Análisis por CUIT
         </h3>
         <p style="color: #ffffff !important; margin: 0 !important; font-size: 1.1rem !important;">
-            Consulta directa a la base de datos de SENASA para obtener coordenadas y analizar cultivos
+            Consulta automática de coordenadas para obtener polígonos y analizar cultivos
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -1926,7 +1940,7 @@ def mostrar_analisis_cuit():
         "🏢 Ingresá el CUIT del productor:",
         placeholder="30-12345678-9",
         key="cuit_input",
-        help="💡 El CUIT se consulta directamente en la base de datos de SENASA"
+        help="💡 Consulta automática de coordenadas de campos registrados"
     )
     
     # Opción para elegir entre campos activos o históricos
@@ -1940,7 +1954,7 @@ def mostrar_analisis_cuit():
     if st.button("🚀 Analizar Cultivos por CUIT", type="primary", key="btn_analizar_cuit"):
         if cuit_input:
             try:
-                with st.spinner("🔄 Consultando base de datos de SENASA..."):
+                with st.spinner("🔄 Analizando polígonos y coordenadas..."):
                     # Procesar campos del CUIT
                     poligonos_data = procesar_campos_cuit(cuit_input, solo_activos)
                     
@@ -1957,8 +1971,7 @@ def mostrar_analisis_cuit():
                             st.write(f"""
                             **Campo {i+1}**: {campo.get('titular', 'Sin titular')}  
                             **Localidad**: {campo.get('localidad', 'Sin información')}  
-                            **Superficie**: {campo.get('superficie', 0):.1f} ha  
-                            **RENSPA**: {campo.get('renspa', 'Sin información')}
+                            **Superficie**: {campo.get('superficie', 0):.1f} ha
                             """)
                     
                     # Crear AOI
@@ -1997,7 +2010,19 @@ def mostrar_analisis_cuit():
                             }
                             st.session_state.analisis_completado = True
                             st.success("🎉 ¡Análisis completado exitosamente!")
-                            st.rerun()  # Refrescar para mostrar resultados
+                            # SIN RERUN para mantener la pestaña activa
+                            st.info("📋 Los resultados aparecerán abajo. Podés cambiar de pestaña para verlos en detalle.")
+                            
+                            # Mostrar resumen rápido en la misma pestaña
+                            st.markdown("### 📊 Resumen Rápido")
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Área Total", f"{area_total:,.1f} ha")
+                            with col2:
+                                cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
+                                st.metric("Cultivos", f"{cultivos_detectados:,}")
+                            with col3:
+                                st.metric("Campos", f"{len(poligonos_data)} encontrados")
                         else:
                             st.error("❌ No se pudieron analizar los cultivos")
                             st.session_state.analisis_completado = False
