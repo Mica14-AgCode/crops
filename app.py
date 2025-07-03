@@ -1827,8 +1827,12 @@ def procesar_campos_cuit(cuit, solo_activos=True):
 
 def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
     """
-    Analiza el riesgo de inundación usando datos de Earth Engine
-    Basado en el código de valuación de campos
+    Analiza el riesgo de inundación usando la metodología CORRECTA del código original:
+    - Global Surface Water para contexto histórico
+    - Landsat para 2005-2016 
+    - Sentinel-1 y Sentinel-2 para 2017+
+    - Excluye 2014 por falta de datos
+    - Control de calidad: solo áreas >1 ha
     """
     try:
         # Obtener geometría del AOI
@@ -1837,58 +1841,75 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
         else:
             geometry = aoi
         
+        st.markdown("### 🔬 **Metodología de Análisis (como código original)**")
+        st.info("""
+        **📡 Sensores por período**:
+        - **2005-2013**: Landsat 7 (NDWI + MNDWI)
+        - **2013-2016**: Landsat 8 (NDWI + MNDWI) 
+        - **2017-2025**: Sentinel-1 (radar) + Sentinel-2 (óptico)
+        - **Excluido**: 2014 (falta de datos)
+        - **Control**: Solo áreas >1 ha son significativas
+        """)
+        
         # Configurar años de análisis (excluir 2014 como en el código original)
         anos_disponibles = list(range(anos_analisis[0], anos_analisis[1] + 1))
         if 2014 in anos_disponibles:
             anos_disponibles.remove(2014)
         
+        st.write(f"📅 **Analizando {len(anos_disponibles)} años**: {anos_disponibles}")
+        
         # Inicializar resultados
         resultados_por_año = {}
         eventos_inundacion = []
         
-        # Procesamiento por batches de años (para evitar timeout)
-        batch_size = 3
-        for i in range(0, len(anos_disponibles), batch_size):
-            batch_anos = anos_disponibles[i:i+batch_size]
-            
-            for año in batch_anos:
-                try:
-                    # Definir período de análisis (abril a marzo del año siguiente)
-                    fecha_inicio = f"{año}-04-01"
-                    fecha_fin = f"{año+1}-03-31"
+        # Calcular área total una sola vez
+        area_total_m2 = geometry.area(maxError=10).getInfo()
+        area_total_ha = area_total_m2 / 10000
+        st.write(f"📏 **Área total del polígono**: {area_total_ha:.1f} ha")
+        
+        # Procesamiento año por año
+        for año in anos_disponibles:
+            try:
+                st.write(f"\n🔍 **Analizando año {año}**...")
+                
+                # Definir fechas según metodología original
+                fecha_inicio = f"{año}-01-01"
+                fecha_fin = f"{año}-12-31"
+                
+                # Obtener datos de inundación usando metodología correcta
+                inundacion_data = obtener_datos_inundacion_año_metodologia_original(
+                    geometry, año, fecha_inicio, fecha_fin, area_total_ha
+                )
+                
+                if inundacion_data and inundacion_data['area_inundada_ha'] > 0:
+                    # Solo registrar si es significativo (>1 ha como en código original)
+                    area_inundada = inundacion_data['area_inundada_ha']
+                    porcentaje_inundacion = (area_inundada / area_total_ha * 100) if area_total_ha > 0 else 0
                     
-                    # Obtener datos de inundación usando diferentes sensores
-                    inundacion_data = obtener_datos_inundacion_año(geometry, fecha_inicio, fecha_fin)
+                    resultados_por_año[año] = {
+                        'area_total_ha': area_total_ha,
+                        'area_inundada_ha': area_inundada,
+                        'porcentaje_inundacion': porcentaje_inundacion,
+                        'sensor_usado': inundacion_data['sensor_usado'],
+                        'num_imagenes': inundacion_data['num_imagenes']
+                    }
                     
-                    if inundacion_data:
-                        # Procesar datos de inundación - USAR ÁREA CALCULADA CORRECTAMENTE
-                        area_total = inundacion_data.get('area_total_ha', 0)  # Usar área ya calculada
-                        area_inundada = inundacion_data.get('area_inundada_ha', 0)
-                        porcentaje_inundacion = inundacion_data.get('porcentaje_inundacion', 0)  # Usar % ya calculado
-                        
-                        resultados_por_año[año] = {
-                            'area_total_ha': area_total,
-                            'area_inundada_ha': area_inundada,
-                            'porcentaje_inundacion': porcentaje_inundacion,
-                            'frecuencia_eventos': inundacion_data.get('frecuencia_eventos', 0),
-                            'duracion_maxima': inundacion_data.get('duracion_maxima', 0)
-                        }
-                        
-                        # Registrar eventos significativos
-                        if porcentaje_inundacion >= umbral_inundacion:
-                            eventos_inundacion.append({
-                                'año': año,
-                                'porcentaje': porcentaje_inundacion,
-                                'area_ha': area_inundada,
-                                'severidad': 'Alta' if porcentaje_inundacion > 40 else 'Media' if porcentaje_inundacion > 20 else 'Baja'
-                            })
-                        
-                        # Mostrar progreso
-                        st.write(f"✅ Año {año}: {porcentaje_inundacion:.1f}% inundado ({area_inundada:.1f} ha)")
+                    # Registrar eventos significativos
+                    if porcentaje_inundacion >= umbral_inundacion:
+                        eventos_inundacion.append({
+                            'año': año,
+                            'porcentaje': porcentaje_inundacion,
+                            'area_ha': area_inundada,
+                            'severidad': 'Alta' if porcentaje_inundacion > 40 else 'Media' if porcentaje_inundacion > 20 else 'Baja'
+                        })
                     
-                except Exception as e:
-                    st.warning(f"⚠️ Error procesando año {año}: {str(e)}")
-                    continue
+                    st.write(f"✅ **Año {año}**: {area_inundada:.1f} ha inundada ({porcentaje_inundacion:.1f}%) - {inundacion_data['sensor_usado']}")
+                else:
+                    st.write(f"⚪ **Año {año}**: Sin inundación significativa")
+                    
+            except Exception as e:
+                st.warning(f"⚠️ **Error procesando año {año}**: {str(e)}")
+                continue
         
         # Calcular estadísticas generales
         if resultados_por_año:
@@ -1902,8 +1923,8 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
                     'Área Total (ha)': datos['area_total_ha'],
                     'Área Inundada (ha)': datos['area_inundada_ha'],
                     'Porcentaje Inundación': datos['porcentaje_inundacion'],
-                    'Frecuencia Eventos': datos['frecuencia_eventos'],
-                    'Duración Máxima (días)': datos['duracion_maxima']
+                    'Sensor': datos['sensor_usado'],
+                    'Imágenes': datos['num_imagenes']
                 }
                 for año, datos in resultados_por_año.items()
             ])
@@ -1915,22 +1936,26 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
             años_con_eventos = len([e for e in eventos_inundacion if e['porcentaje'] >= umbral_inundacion])
             probabilidad_evento = años_con_eventos / len(anos_disponibles) * 100
             
-            # Clasificar riesgo
-            if riesgo_promedio < 10:
-                categoria_riesgo = "Bajo"
-            elif riesgo_promedio < 25:
-                categoria_riesgo = "Medio"
+            # Clasificar riesgo según metodología original
+            if riesgo_promedio < 5:
+                categoria_riesgo = "Sin riesgo"
+            elif riesgo_promedio < 15:
+                categoria_riesgo = "Riesgo bajo"
+            elif riesgo_promedio < 30:
+                categoria_riesgo = "Riesgo medio"
             elif riesgo_promedio < 50:
-                categoria_riesgo = "Alto"
+                categoria_riesgo = "Riesgo alto"
             else:
-                categoria_riesgo = "Muy Alto"
+                categoria_riesgo = "Riesgo muy alto"
             
             # Generar mapa de riesgo
             mapa_riesgo = crear_mapa_riesgo_hidrico(geometry, resultados_por_año, eventos_inundacion)
             
+            st.success(f"🎉 **Análisis completado**: {len(resultados_por_año)} años con datos, categoría: {categoria_riesgo}")
+            
             return {
                 'df_inundacion': df_inundacion,
-                'area_total_ha': np.mean([r['area_total_ha'] for r in resultados_por_año.values()]),
+                'area_total_ha': area_total_ha,
                 'riesgo_promedio': riesgo_promedio,
                 'riesgo_maximo': riesgo_maximo,
                 'categoria_riesgo': categoria_riesgo,
@@ -1938,102 +1963,185 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
                 'frecuencia_eventos': frecuencia_eventos_significativos,
                 'probabilidad_evento': probabilidad_evento,
                 'años_analizados': len(anos_disponibles),
+                'años_con_datos': len(resultados_por_año),
                 'mapa_riesgo': mapa_riesgo,
                 'resultados_por_año': resultados_por_año
             }
         else:
+            st.warning("⚠️ **No se detectaron inundaciones significativas** en ningún año")
             return None
             
     except Exception as e:
-        st.error(f"Error en análisis de riesgo hídrico: {str(e)}")
+        st.error(f"❌ **Error en análisis de riesgo hídrico**: {str(e)}")
         return None
 
-def obtener_datos_inundacion_año(geometry, fecha_inicio, fecha_fin):
+def obtener_datos_inundacion_año_metodologia_original(geometry, año, fecha_inicio, fecha_fin, area_total_ha):
     """
-    Obtiene datos de inundación para un año específico
-    ANÁLISIS EXPLICADO PASO A PASO:
-    
-    1. Busca imágenes Sentinel-1 (radar) del área y período
-    2. Detecta agua usando umbral -18 dB en banda VH
-    3. Calcula frecuencia de agua en cada píxel
-    4. Cuenta píxeles con agua >30% del tiempo
-    5. Convierte píxeles a hectáreas DENTRO del polígono
+    METODOLOGÍA ORIGINAL DEL CÓDIGO DE VALUACIÓN:
+    - 2005-2013: Landsat 7 (NDWI + MNDWI)
+    - 2013-2016: Landsat 8 (NDWI + MNDWI)
+    - 2017+: Sentinel-1 (radar) + Sentinel-2 (óptico)
+    - Control: Solo áreas >1 ha significativas
     """
     try:
-        st.write(f"🔍 **Analizando período**: {fecha_inicio} a {fecha_fin}")
+        agua_detectada = None
+        sensor_usado = "Sin datos"
+        num_imagenes = 0
         
-        # PASO 1: Obtener imágenes Sentinel-1 (radar)
-        s1_collection = ee.ImageCollection("COPERNICUS/S1_GRD") \
-            .filterBounds(geometry) \
-            .filterDate(fecha_inicio, fecha_fin) \
-            .filter(ee.Filter.eq('instrumentMode', 'IW')) \
-            .filter(ee.Filter.eq('orbitProperties_pass', 'DESCENDING'))
+        # ===== SENTINEL-1 Y SENTINEL-2 (2017+) =====
+        if año >= 2017:
+            st.write(f"    📡 **Intentando Sentinel-1 (radar)**...")
+            
+            # Intentar Sentinel-1 primero
+            s1 = ee.ImageCollection("COPERNICUS/S1_GRD") \
+                .filterBounds(geometry) \
+                .filterDate(fecha_inicio, fecha_fin) \
+                .filter(ee.Filter.eq('instrumentMode', 'IW')) \
+                .filter(ee.Filter.eq('orbitProperties_pass', 'DESCENDING'))
+            
+            count_s1 = s1.size().getInfo()
+            st.write(f"    🛰️ **Sentinel-1**: {count_s1} imágenes")
+            
+            if count_s1 >= 3:
+                def process_s1(img):
+                    vh = img.select('VH')
+                    return vh.lt(-18).rename('agua')  # Umbral para agua
+                
+                agua_s1 = s1.map(process_s1).max()
+                agua_detectada = agua_s1
+                sensor_usado = f'Sentinel-1'
+                num_imagenes = count_s1
+                st.write(f"    ✅ **Usando Sentinel-1** ({count_s1} imágenes)")
+            
+            # Si no hay suficiente S1, intentar Sentinel-2
+            if agua_detectada is None:
+                st.write(f"    📡 **Intentando Sentinel-2 (óptico)**...")
+                
+                s2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
+                    .filterBounds(geometry) \
+                    .filterDate(fecha_inicio, fecha_fin) \
+                    .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 30))
+                
+                count_s2 = s2.size().getInfo()
+                st.write(f"    🛰️ **Sentinel-2**: {count_s2} imágenes")
+                
+                if count_s2 >= 3:
+                    def process_s2(img):
+                        # Máscara de nubes SCL
+                        scl = img.select('SCL')
+                        cloud_mask = scl.neq(3).And(scl.neq(8)).And(scl.neq(9)).And(scl.neq(10))
+                        
+                        # NDWI y MNDWI para detectar agua
+                        ndwi = img.normalizedDifference(['B3', 'B8'])  # Green-NIR
+                        mndwi = img.normalizedDifference(['B3', 'B11']) # Green-SWIR
+                        
+                        water = ndwi.gt(0.3).Or(mndwi.gt(0.3))
+                        return water.updateMask(cloud_mask).selfMask()
+                    
+                    agua_s2 = s2.map(process_s2).max()
+                    agua_detectada = agua_s2
+                    sensor_usado = f'Sentinel-2'
+                    num_imagenes = count_s2
+                    st.write(f"    ✅ **Usando Sentinel-2** ({count_s2} imágenes)")
         
-        num_imagenes = s1_collection.size().getInfo()
-        st.write(f"📡 **Imágenes Sentinel-1 encontradas**: {num_imagenes}")
+        # ===== LANDSAT (2005-2016) =====
+        else:
+            st.write(f"    📡 **Intentando Landsat**...")
+            
+            # Determinar colección Landsat según año
+            if año >= 2013:
+                landsat = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')  # Landsat 8
+                sensor_name = 'Landsat 8'
+            else:
+                landsat = ee.ImageCollection('LANDSAT/LE07/C02/T1_L2')  # Landsat 7
+                sensor_name = 'Landsat 7'
+            
+            landsat = landsat \
+                .filterBounds(geometry) \
+                .filterDate(fecha_inicio, fecha_fin) \
+                .filter(ee.Filter.lt('CLOUD_COVER', 30))
+            
+            count_landsat = landsat.size().getInfo()
+            st.write(f"    🛰️ **{sensor_name}**: {count_landsat} imágenes")
+            
+            if count_landsat >= 3:
+                def process_landsat(img):
+                    # Máscara de nubes usando QA_PIXEL
+                    qa = img.select('QA_PIXEL')
+                    cloud_mask = qa.bitwiseAnd(8).eq(0) \
+                        .And(qa.bitwiseAnd(10).eq(0)) \
+                        .And(qa.bitwiseAnd(16).eq(0))
+                    
+                    # NDWI y MNDWI según bandas del sensor
+                    if año >= 2013:  # Landsat 8
+                        ndwi = img.normalizedDifference(['SR_B3', 'SR_B5'])  # Green-NIR
+                        mndwi = img.normalizedDifference(['SR_B3', 'SR_B6']) # Green-SWIR1
+                    else:  # Landsat 7
+                        ndwi = img.normalizedDifference(['SR_B2', 'SR_B4'])  # Green-NIR
+                        mndwi = img.normalizedDifference(['SR_B2', 'SR_B5']) # Green-SWIR1
+                    
+                    water = ndwi.gt(0.3).Or(mndwi.gt(0.3))
+                    return water.updateMask(cloud_mask).selfMask()
+                
+                agua_landsat = landsat.map(process_landsat).max()
+                agua_detectada = agua_landsat
+                sensor_usado = sensor_name
+                num_imagenes = count_landsat
+                st.write(f"    ✅ **Usando {sensor_name}** ({count_landsat} imágenes)")
         
-        if num_imagenes > 0:
-            # PASO 2: Procesar cada imagen para detectar agua
-            s1_agua = s1_collection.map(lambda img: procesar_sentinel1_agua(img))
+        # ===== CALCULAR ÁREA INUNDADA =====
+        if agua_detectada is not None and num_imagenes >= 3:
+            st.write(f"    🔄 **Calculando área inundada**...")
             
-            # PASO 3: Calcular frecuencia de agua (promedio temporal)
-            agua_frecuencia = s1_agua.mean()
-            umbral_agua = 0.3  # 30% de frecuencia mínima
-            st.write(f"💧 **Umbral de detección**: Píxeles con agua >{umbral_agua*100}% del tiempo")
+            area_inundada = agua_detectada.multiply(ee.Image.pixelArea()).divide(10000) \
+                .reduceRegion(
+                    reducer=ee.Reducer.sum(),
+                    geometry=geometry,
+                    scale=30,
+                    maxPixels=1e9,
+                    bestEffort=True
+                ).getInfo()
             
-            # PASO 4: Crear máscara de agua persistente
-            mascara_agua = agua_frecuencia.gt(umbral_agua)
+            # Obtener el valor correcto según el tipo de imagen
+            area_ha = 0
+            for key in ['constant', 'agua', 'nd']:
+                if key in area_inundada and area_inundada[key]:
+                    area_ha = area_inundada[key]
+                    break
             
-            # PASO 5: CALCULAR ÁREA CORRECTAMENTE
-            # Primero obtener área total del polígono como referencia
-            area_total_m2 = geometry.area(maxError=10).getInfo()
-            area_total_ha = area_total_m2 / 10000
-            st.write(f"📏 **Área total del polígono**: {area_total_ha:.1f} ha")
-            
-            # Ahora calcular área de píxeles de agua DENTRO del polígono
-            # Usar clipToCollection para asegurar que solo cuenta píxeles dentro
-            mascara_agua_clipped = mascara_agua.clip(geometry)
-            
-            # Calcular estadísticas con escala apropiada
-            stats = mascara_agua_clipped.reduceRegion(
-                reducer=ee.Reducer.sum(),
-                geometry=geometry,
-                scale=30,  # Escala nativa de Sentinel-1 (mejor precisión)
-                maxPixels=1e10,
-                bestEffort=True
-            )
-            
-            pixeles_agua = stats.getInfo().get('agua', 0)
-            area_inundada_ha = pixeles_agua * 30 * 30 / 10000  # Convertir a hectáreas
-            
-            # CONTROL DE CALIDAD: El área inundada NO puede ser mayor que el área total
-            if area_inundada_ha > area_total_ha:
-                st.warning(f"⚠️ **Corrección aplicada**: Área inundada calculada ({area_inundada_ha:.1f} ha) > Área total ({area_total_ha:.1f} ha)")
-                # Aplicar corrección: máximo 95% del área total
-                area_inundada_ha = min(area_inundada_ha, area_total_ha * 0.95)
-                st.write(f"🔧 **Área corregida**: {area_inundada_ha:.1f} ha")
-            
-            porcentaje_inundacion = (area_inundada_ha / area_total_ha * 100) if area_total_ha > 0 else 0
-            st.write(f"📊 **Resultado**: {area_inundada_ha:.1f} ha inundada ({porcentaje_inundacion:.1f}%)")
-            
-            # Contar eventos (imágenes con agua detectada)
-            frecuencia_eventos = num_imagenes
-            
+            # CONTROL DE CALIDAD COMO EN CÓDIGO ORIGINAL:
+            # Solo registrar si el área es significativa (>1 ha)
+            if area_ha > 1:
+                area_ha = round(area_ha, 2)
+                st.write(f"    💧 **Área inundada**: {area_ha} ha")
+                
+                return {
+                    'area_inundada_ha': area_ha,
+                    'sensor_usado': sensor_usado,
+                    'num_imagenes': num_imagenes
+                }
+            else:
+                st.write(f"    ✅ **Sin inundación significativa** (<1 ha)")
+                return {
+                    'area_inundada_ha': 0,
+                    'sensor_usado': sensor_usado,
+                    'num_imagenes': num_imagenes
+                }
+        else:
+            st.write(f"    ⚠️ **Datos insuficientes** para análisis")
             return {
-                'area_inundada_ha': area_inundada_ha,
-                'area_total_ha': area_total_ha,  # Incluir área total para referencia
-                'frecuencia_eventos': frecuencia_eventos,
-                'duracion_maxima': frecuencia_eventos * 12,  # Estimación basada en revisitas
-                'porcentaje_inundacion': porcentaje_inundacion,
+                'area_inundada_ha': 0,
+                'sensor_usado': 'Datos insuficientes',
                 'num_imagenes': num_imagenes
             }
-        else:
-            st.warning(f"⚠️ **Sin datos**: No hay imágenes Sentinel-1 para el período {fecha_inicio} - {fecha_fin}")
-            return None
             
     except Exception as e:
-        st.error(f"❌ **Error procesando {fecha_inicio}**: {str(e)}")
-        return None
+        st.error(f"    ❌ **Error procesando año {año}**: {str(e)}")
+        return {
+            'area_inundada_ha': 0,
+            'sensor_usado': 'Error',
+            'num_imagenes': 0
+        }
 
 def procesar_sentinel1_agua(imagen):
     """
@@ -2064,7 +2172,7 @@ def crear_mapa_riesgo_hidrico(geometry, resultados_por_año, eventos_inundacion)
     """
     try:
         # Obtener centroide de la geometría
-        centroide = geometry.centroid().getInfo()['coordinates']
+        centroide = geometry.centroid(maxError=10).getInfo()['coordinates']
         
         # Crear mapa base
         mapa = folium.Map(
@@ -2329,6 +2437,12 @@ def mostrar_analisis_cultivos_kmz():
                     cultivos_por_campana = {}
                 
                 if df_cultivos is not None and not df_cultivos.empty:
+                    # LIMPIAR CUALQUIER RESULTADO ANTERIOR ANTES DE GUARDAR NUEVO
+                    if 'resultados_analisis' in st.session_state:
+                        del st.session_state.resultados_analisis
+                    if 'analisis_completado' in st.session_state:
+                        del st.session_state.analisis_completado
+                    
                     # GUARDAR TODO EN SESSION STATE
                     st.session_state.resultados_analisis = {
                         'tipo_analisis': 'cultivos',
@@ -2491,6 +2605,12 @@ def mostrar_analisis_inundacion_kmz():
                 resultado_inundacion = analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion)
                 
                 if resultado_inundacion:
+                    # LIMPIAR CUALQUIER RESULTADO ANTERIOR ANTES DE GUARDAR NUEVO
+                    if 'resultados_analisis' in st.session_state:
+                        del st.session_state.resultados_analisis
+                    if 'analisis_completado' in st.session_state:
+                        del st.session_state.analisis_completado
+                    
                     # GUARDAR RESULTADOS DE INUNDACIÓN
                     st.session_state.resultados_analisis = {
                         'tipo_analisis': 'inundacion',
@@ -2833,6 +2953,12 @@ def mostrar_analisis_inundacion_cuit():
                     resultado_inundacion = analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion)
                     
                     if resultado_inundacion:
+                        # LIMPIAR CUALQUIER RESULTADO ANTERIOR ANTES DE GUARDAR NUEVO
+                        if 'resultados_analisis' in st.session_state:
+                            del st.session_state.resultados_analisis
+                        if 'analisis_completado' in st.session_state:
+                            del st.session_state.analisis_completado
+                        
                         # GUARDAR RESULTADOS DE INUNDACIÓN
                         st.session_state.resultados_analisis = {
                             'tipo_analisis': 'inundacion',
