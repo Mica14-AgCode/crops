@@ -124,10 +124,10 @@ st.markdown("""
             font-size: 16px !important;
         }
         
-        /* MEJORAR FILE UPLOADER EN MÓVIL */
+        /* MEJORAR FILE UPLOADER EN MÓVIL - FORZADO NEGRO */
         [data-testid="stFileUploader"] {
-            background-color: #f0f8ff !important;
-            border: 3px dashed #0066cc !important;
+            background: linear-gradient(135deg, #2a2a2a, #1a1a1a) !important;
+            border: 3px dashed #00D2BE !important;
             border-radius: 15px !important;
             padding: 20px !important;
             text-align: center !important;
@@ -136,7 +136,7 @@ st.markdown("""
         [data-testid="stFileUploader"] label {
             font-size: 18px !important;
             font-weight: bold !important;
-            color: #0066cc !important;
+            color: #00D2BE !important;
         }
         
         /* Mejorar tablas en móvil */
@@ -176,10 +176,10 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
-    /* MEJORAR FILE UPLOADER EN GENERAL */
+    /* MEJORAR FILE UPLOADER EN GENERAL - FORZADO NEGRO */
     [data-testid="stFileUploader"] {
-        background: linear-gradient(135deg, #f0f8ff, #e6f3ff) !important;
-        border: 3px dashed #0066cc !important;
+        background: linear-gradient(135deg, #2a2a2a, #1a1a1a) !important;
+        border: 3px dashed #00D2BE !important;
         border-radius: 15px !important;
         padding: 25px !important;
         text-align: center !important;
@@ -187,16 +187,36 @@ st.markdown("""
     }
     
     [data-testid="stFileUploader"]:hover {
-        background: linear-gradient(135deg, #e6f3ff, #cce7ff) !important;
-        border-color: #0052cc !important;
+        background: linear-gradient(135deg, #3a3a3a, #2a2a2a) !important;
+        border-color: #00B8A8 !important;
         transform: scale(1.02) !important;
     }
     
     [data-testid="stFileUploader"] label {
         font-size: 20px !important;
         font-weight: bold !important;
-        color: #0066cc !important;
-        text-shadow: 1px 1px 2px rgba(0,0,0,0.1) !important;
+        color: #00D2BE !important;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.3) !important;
+    }
+    
+    /* FORZAR TODOS LOS ELEMENTOS DEL FILE UPLOADER */
+    [data-testid="stFileUploader"] * {
+        background-color: transparent !important;
+        color: #ffffff !important;
+    }
+    
+    [data-testid="stFileUploader"] div {
+        background-color: transparent !important;
+        color: #ffffff !important;
+    }
+    
+    [data-testid="stFileUploader"] section {
+        background-color: transparent !important;
+        color: #ffffff !important;
+    }
+    
+    [data-testid="stFileUploader"] small {
+        color: #cccccc !important;
     }
     
     /* Centrar contenido en móviles */
