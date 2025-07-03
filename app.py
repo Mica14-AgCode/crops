@@ -212,24 +212,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ⚠️ AVISO IMPORTANTE SOBRE MÓVILES MOVIDO AL MAIN()
-
-# ⚠️ AVISO IMPORTANTE SOBRE MÓVILES
-st.markdown("""
-<div style="background-color: #fff3cd; border-left: 5px solid #ffc107; 
-            padding: 15px; margin: 20px 0; border-radius: 8px;">
-    <h4 style="color: #856404; margin: 0 0 10px 0;">
-        📱 <strong>IMPORTANTE: Uso en Dispositivos Móviles</strong>
-    </h4>
-    <p style="color: #856404; margin: 0; line-height: 1.4;">
-        <strong>⚠️ Limitación conocida:</strong> Los archivos KMZ pueden no subir correctamente en navegadores móviles (iPhone, Android).<br>
-        <strong>💡 Solución recomendada:</strong> Usa una computadora de escritorio o laptop para mejores resultados.<br>
-        <strong>🔄 Alternativa:</strong> Si solo tienes móvil, prueba con diferentes navegadores (Chrome, Firefox, Safari).
-    </p>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("---")
+# AVISOS ELIMINADOS - MOVIDOS AL MAIN()
 
 # Inicialización de Earth Engine
 @st.cache_resource
@@ -1088,13 +1071,29 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         except Exception as e:
             pass  # Si falla, continuar sin tiles
     
-    # 🔥 CONTORNO SÚPER SIMPLE QUE DEFINITIVAMENTE FUNCIONA
+    # 🔥 CONTORNO SÚPER SIMPLE CON DEBUG COMPLETO
     try:
+        print("🔍 === DEBUG CONTORNO INICIADO ===")
+        print(f"🔍 Tipo de AOI: {type(aoi)}")
+        print(f"🔍 AOI: {aoi}")
+        
         print("🔍 Intentando obtener geometría del AOI...")
         aoi_geojson = aoi.getInfo()
-        print(f"✅ AOI obtenido: {type(aoi_geojson)}")
+        print(f"✅ AOI obtenido - Tipo: {type(aoi_geojson)}")
         
         if aoi_geojson:
+            print(f"🎯 Contenido del AOI GeoJSON:")
+            print(f"   - Claves: {list(aoi_geojson.keys()) if isinstance(aoi_geojson, dict) else 'No es dict'}")
+            
+            if isinstance(aoi_geojson, dict):
+                print(f"   - Tipo: {aoi_geojson.get('type', 'Sin tipo')}")
+                if 'features' in aoi_geojson:
+                    print(f"   - Features: {len(aoi_geojson['features'])}")
+                    for i, feature in enumerate(aoi_geojson['features'][:2]):  # Solo primeras 2
+                        print(f"     Feature {i}: {feature.get('type', 'Sin tipo')}")
+                        if 'geometry' in feature:
+                            print(f"     Geometry: {feature['geometry'].get('type', 'Sin tipo')}")
+            
             print(f"🎯 Agregando contorno simple y visible...")
             
             # MÉTODO ULTRA SIMPLE: Solo línea roja gruesa
@@ -1113,14 +1112,86 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
                 popup="🌾 CAMPO ANALIZADO"
             )
             contorno_simple.add_to(m)
-            print("✅ Contorno agregado al mapa")
+            print("✅ Contorno agregado al mapa exitosamente")
             
         else:
-            print("❌ AOI geojson es None")
+            print("❌ AOI geojson es None o vacío")
     except Exception as e:
         print(f"❌ Error agregando contorno: {e}")
         import traceback
+        print("📋 Traceback completo:")
         traceback.print_exc()
+        
+        # Intentar método alternativo
+        print("🔄 Intentando método alternativo...")
+        try:
+            # Método simple directo sin getInfo()
+            bounds = aoi.geometry().bounds()
+            print(f"✅ Bounds obtenidos: {bounds}")
+            
+            # Crear polígono simple con bounds
+            bounds_info = bounds.getInfo()
+            print(f"✅ Bounds info: {bounds_info}")
+            
+            if bounds_info and 'coordinates' in bounds_info:
+                coords = bounds_info['coordinates'][0]
+                print(f"✅ Coordenadas extraídas: {len(coords)} puntos")
+                
+                # Crear GeoJSON simple
+                simple_geojson = {
+                    "type": "FeatureCollection",
+                    "features": [{
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [coords]
+                        }
+                    }]
+                }
+                
+                contorno_alternativo = folium.GeoJson(
+                    simple_geojson,
+                    name="🔥 LÍMITE ALTERNATIVO",
+                    style_function=lambda x: {
+                        "fillColor": "#FFFF00",
+                        "color": "#FF0000", 
+                        "weight": 20,
+                        "fillOpacity": 0.3,
+                        "opacity": 1.0
+                    }
+                )
+                contorno_alternativo.add_to(m)
+                print("✅ Contorno alternativo agregado")
+                
+        except Exception as e2:
+            print(f"❌ Error en método alternativo: {e2}")
+            traceback.print_exc()
+    
+    print("🔍 === DEBUG CONTORNO TERMINADO ===")
+    print(f"🔍 Número de capas en el mapa: {len(m._children)}")
+    print(f"🔍 Capas del mapa: {list(m._children.keys())}")
+    
+    # Forzar que el contorno aparezca arriba
+    print("🔍 Intentando agregar contorno con método directo...")
+    try:
+        # Método más directo posible
+        aoi_simple = aoi.geometry().bounds().getInfo()
+        if aoi_simple:
+            coords = aoi_simple['coordinates'][0]
+            # Crear marcadores en las esquinas para asegurar visibilidad
+            for i, coord in enumerate(coords[:4]):  # Solo 4 esquinas
+                folium.CircleMarker(
+                    location=[coord[1], coord[0]],  # lat, lon
+                    radius=15,
+                    popup=f"🔴 Esquina {i+1}",
+                    color="red",
+                    fillColor="yellow",
+                    fillOpacity=1.0,
+                    weight=5
+                ).add_to(m)
+                print(f"✅ Marcador {i+1} agregado en [{coord[1]}, {coord[0]}]")
+    except Exception as e3:
+        print(f"❌ Error agregando marcadores: {e3}")
     
     # Crear leyenda con información de cultivos
     legend_added = False
@@ -1550,11 +1621,7 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
-    # Título principal
-    st.markdown('<h1 class="main-header">🌾 Análisis de Rotación de Cultivos</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Sube tus archivos KMZ y obtén análisis detallado de cultivos y rotación</p>', unsafe_allow_html=True)
-
-    # ⚠️ AVISO IMPORTANTE SOBRE MÓVILES
+    # ⚠️ AVISO IMPORTANTE SOBRE MÓVILES - SOLO UNA VEZ
     st.markdown("""
     <div style="background-color: #fff3cd; border-left: 5px solid #ffc107; 
                 padding: 15px; margin: 20px 0; border-radius: 8px;">
@@ -1589,15 +1656,15 @@ def main():
     
     st.success("✅ Google Earth Engine conectado correctamente")
     
-    # Área de upload MEJORADA con mejor diseño
+    # Área de upload MEJORADA - Negro con letras blancas que se ven bien
     st.markdown("""
-    <div style="background: linear-gradient(135deg, #f0f8ff, #e6f3ff); 
+    <div style="background: linear-gradient(135deg, #2a2a2a, #1a1a1a); 
                 padding: 25px; border-radius: 15px; margin: 20px 0; 
-                border: 2px solid #0066cc; text-align: center;">
-        <h3 style="color: #0066cc; margin: 0 0 15px 0;">
+                border: 2px solid #00D2BE; text-align: center;">
+        <h3 style="color: #00D2BE; margin: 0 0 15px 0;">
             📁 Carga de Archivos KMZ
         </h3>
-        <p style="color: #004499; margin: 0;">
+        <p style="color: #ffffff; margin: 0;">
             Selecciona uno o más archivos KMZ para analizar cultivos y rotación
         </p>
     </div>
@@ -1770,16 +1837,7 @@ def main():
                     **🎛️ Transparencia**: Usa la barra deslizante (esquina inferior izquierda) para ajustar transparencia
                     """)
                 
-                # IMPORTANTE: Explicación sobre colores
-                st.info("""
-                **⚠️ IMPORTANTE sobre los colores:**
-                
-                🗺️ **Colores en el MAPA**: Vienen del servidor de Google Earth Engine (no modificables)
-                
-                📊 **Colores EXACTOS**: Están en el **gráfico de rotación** ⬇️ (basados en tu paleta oficial JavaScript)
-                
-                📋 **Leyenda del mapa**: Muestra las áreas y porcentajes correctos, pero los colores pueden diferir ligeramente
-                """)
+                # MENSAJE SOBRE COLORES ELIMINADO
                 
                 # Ayuda adicional
                 with st.expander("🔧 ¿Por qué los colores difieren?", expanded=False):
