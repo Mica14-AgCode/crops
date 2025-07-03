@@ -1861,8 +1861,8 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
                     inundacion_data = obtener_datos_inundacion_año(geometry, fecha_inicio, fecha_fin)
                     
                     if inundacion_data:
-                        # Procesar datos de inundación
-                        area_total = geometry.area().getInfo() / 10000  # Convertir a hectáreas
+                        # Procesar datos de inundación - ARREGLAR ERROR DE GEOMETRY.AREA
+                        area_total = geometry.area(maxError=10).getInfo() / 10000  # Convertir a hectáreas
                         area_inundada = inundacion_data.get('area_inundada_ha', 0)
                         porcentaje_inundacion = (area_inundada / area_total * 100) if area_total > 0 else 0
                         
@@ -1975,12 +1975,13 @@ def obtener_datos_inundacion_año(geometry, fecha_inicio, fecha_fin):
             stats = mascara_agua.reduceRegion(
                 reducer=ee.Reducer.sum(),
                 geometry=geometry,
-                scale=30,
-                maxPixels=1e9
+                scale=100,  # Escala más gruesa para evitar errores
+                maxPixels=1e10,  # Más píxeles permitidos
+                bestEffort=True  # Mejor esfuerzo si hay limitaciones
             )
             
             pixeles_agua = stats.getInfo().get('agua', 0)
-            area_inundada_ha = pixeles_agua * 30 * 30 / 10000  # Convertir a hectáreas
+            area_inundada_ha = pixeles_agua * 100 * 100 / 10000  # Convertir a hectáreas (escala 100m)
             
             # Contar eventos (imágenes con agua detectada)
             frecuencia_eventos = s1_collection.size().getInfo()
@@ -2022,7 +2023,7 @@ def procesar_sentinel1_agua(imagen):
 
 def crear_mapa_riesgo_hidrico(geometry, resultados_por_año, eventos_inundacion):
     """
-    Crea un mapa interactivo de riesgo hídrico
+    Crea un mapa interactivo de riesgo hídrico con píxeles azules de inundación
     """
     try:
         # Obtener centroide de la geometría
@@ -2047,23 +2048,91 @@ def crear_mapa_riesgo_hidrico(geometry, resultados_por_año, eventos_inundacion)
                 weight=2
             ).add_to(mapa)
         
+        # 🌊 CREAR CAPA DE PÍXELES DE INUNDACIÓN EN AZUL
+        try:
+            # Obtener año con más inundación para visualizar
+            if eventos_inundacion:
+                año_peor = max(eventos_inundacion, key=lambda x: x['porcentaje'])['año']
+            else:
+                año_peor = 2020  # Año por defecto
+            
+            # Crear imagen de inundación para ese año
+            fecha_inicio = f"{año_peor}-04-01"
+            fecha_fin = f"{año_peor+1}-03-31"
+            
+            # Obtener datos de Sentinel-1 para visualización
+            s1_collection = ee.ImageCollection("COPERNICUS/S1_GRD") \
+                .filterBounds(geometry) \
+                .filterDate(fecha_inicio, fecha_fin) \
+                .filter(ee.Filter.eq('instrumentMode', 'IW')) \
+                .filter(ee.Filter.eq('orbitProperties_pass', 'DESCENDING'))
+            
+            if s1_collection.size().getInfo() > 0:
+                # Crear máscara de agua
+                s1_agua = s1_collection.map(lambda img: procesar_sentinel1_agua(img))
+                agua_frecuencia = s1_agua.mean()
+                
+                # Crear imagen de inundación en azul
+                mascara_agua = agua_frecuencia.gt(0.3)
+                imagen_inundacion = mascara_agua.updateMask(mascara_agua).visualize(
+                    palette=['blue'],
+                    opacity=0.7
+                )
+                
+                # Crear mapa de tiles para la inundación
+                map_id = imagen_inundacion.getMapId()
+                
+                # Añadir capa de inundación
+                folium.raster_layers.TileLayer(
+                    tiles=map_id['tile_fetcher'].url_format,
+                    attr='Google Earth Engine',
+                    name=f'Píxeles de Inundación {año_peor}',
+                    overlay=True,
+                    control=True
+                ).add_to(mapa)
+                
+                st.success(f"✅ Píxeles de inundación cargados para el año {año_peor}")
+                
+        except Exception as e:
+            st.warning(f"⚠️ No se pudieron cargar los píxeles de inundación: {str(e)}")
+        
         # Añadir marcadores de eventos significativos
         for evento in eventos_inundacion:
             color = 'red' if evento['severidad'] == 'Alta' else 'orange' if evento['severidad'] == 'Media' else 'yellow'
             
             folium.CircleMarker(
                 location=[centroide[1], centroide[0]],
-                radius=evento['porcentaje'] / 5,  # Tamaño proporcional al porcentaje
+                radius=max(5, evento['porcentaje'] / 5),  # Tamaño mínimo 5
                 popup=f"Año {evento['año']}: {evento['porcentaje']:.1f}% inundado",
                 color=color,
                 fillColor=color,
                 fillOpacity=0.7
             ).add_to(mapa)
         
+        # Añadir control de capas
+        folium.LayerControl().add_to(mapa)
+        
+        # Añadir leyenda mejorada
+        leyenda_html = f'''
+        <div style="position: fixed; 
+                    bottom: 50px; left: 50px; width: 250px; height: 150px; 
+                    background-color: white; border:2px solid grey; z-index:9999; 
+                    font-size:12px; padding: 10px; border-radius: 5px;">
+        <h4>🌊 Mapa de Riesgo Hídrico</h4>
+        <p><span style="color:blue;">■</span> Píxeles de inundación detectados</p>
+        <p><span style="color:red;">●</span> Eventos altos (>40%)</p>
+        <p><span style="color:orange;">●</span> Eventos medios (20-40%)</p>
+        <p><span style="color:gold;">●</span> Eventos bajos (<20%)</p>
+        <p><span style="color:lightblue;">□</span> Área de análisis</p>
+        </div>
+        '''
+        mapa.get_root().html.add_child(folium.Element(leyenda_html))
+        
         return mapa
         
     except Exception as e:
         print(f"Error creando mapa de riesgo: {str(e)}")
+        st.error(f"Error creando mapa de riesgo: {str(e)}")
         return None
 
 def main():
@@ -2118,7 +2187,12 @@ def main():
         # MOSTRAR RESULTADOS DENTRO DE LA PESTAÑA CUIT
         if st.session_state.analisis_completado and st.session_state.resultados_analisis:
             if st.session_state.resultados_analisis.get('fuente') == 'CUIT':
-                mostrar_resultados_analisis()
+                # Verificar el tipo de análisis para mostrar los resultados apropiados
+                tipo_analisis = st.session_state.resultados_analisis.get('tipo_analisis', 'cultivos')
+                if tipo_analisis == 'cultivos':
+                    mostrar_resultados_analisis()
+                elif tipo_analisis == 'inundacion':
+                    mostrar_resultados_inundacion()
     
     st.markdown("---")
     st.markdown("""
@@ -2361,6 +2435,18 @@ def mostrar_analisis_inundacion_kmz():
 
 def mostrar_analisis_cuit():
     """Muestra la interfaz para análisis por CUIT"""
+    
+    # SUB-PESTAÑAS PARA TIPOS DE ANÁLISIS EN CUIT
+    sub_tabs_cuit = st.tabs(["🌾 Cultivos y Rotación", "🌊 Riesgo Hídrico"])
+    
+    with sub_tabs_cuit[0]:
+        mostrar_analisis_cultivos_cuit()
+    
+    with sub_tabs_cuit[1]:
+        mostrar_analisis_inundacion_cuit()
+
+def mostrar_analisis_cultivos_cuit():
+    """Análisis de cultivos por CUIT"""
     st.markdown("""
     <div style="background: linear-gradient(135deg, #2a2a2a, #1a1a1a) !important; 
                 padding: 25px !important; border-radius: 15px !important; margin: 20px 0 !important; 
@@ -2378,7 +2464,7 @@ def mostrar_analisis_cuit():
     cuit_input = st.text_input(
         "🏢 Ingresá el CUIT del productor:",
         placeholder="30-12345678-9",
-        key="cuit_input",
+        key="cuit_input_cultivos",
         help="💡 Consulta automática de coordenadas de campos registrados"
     )
     
@@ -2386,7 +2472,7 @@ def mostrar_analisis_cuit():
     solo_activos = st.radio(
         "¿Qué campos querés analizar?",
         ["Solo campos activos", "Todos los campos (incluye históricos)"],
-        key="tipo_campos_cuit",
+        key="tipo_campos_cuit_cultivos",
         horizontal=True
     ) == "Solo campos activos"
     
@@ -2395,12 +2481,12 @@ def mostrar_analisis_cuit():
     tipo_analisis = st.radio(
         "¿Cómo querés analizar los cultivos?",
         ["🌾 Análisis General (todos los campos juntos)", "🎯 Análisis Individual (campo por campo)"],
-        key="tipo_analisis_cuit",
+        key="tipo_analisis_cuit_cultivos",
         horizontal=True,
         help="General: Un solo análisis con todos los campos como AOI único. Individual: Análisis separado por cada campo."
     )
     
-    if st.button("🚀 Analizar Cultivos por CUIT", type="primary", key="btn_analizar_cuit"):
+    if st.button("🚀 Analizar Cultivos por CUIT", type="primary", key="btn_analizar_cuit_cultivos"):
         if cuit_input:
             try:
                 with st.spinner("🔄 Analizando polígonos y coordenadas..."):
@@ -2565,6 +2651,130 @@ def mostrar_analisis_cuit():
                                 st.error("❌ No se pudieron analizar los cultivos")
                                 st.session_state.analisis_completado = False
                             
+            except ValueError as e:
+                st.error("❌ CUIT inválido. Verificá el formato (XX-XXXXXXXX-X)")
+            except Exception as e:
+                st.error(f"❌ Error procesando CUIT: {e}")
+        else:
+            st.warning("⚠️ Por favor, ingresá un CUIT válido")
+
+def mostrar_analisis_inundacion_cuit():
+    """Análisis de riesgo hídrico por CUIT"""
+    
+    # 🔥 ÁREA DE ANÁLISIS PARA INUNDACIÓN POR CUIT
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #2a2a2a, #1a1a1a) !important; 
+                padding: 25px !important; border-radius: 15px !important; margin: 20px 0 !important; 
+                border: 2px solid #00D2BE !important; text-align: center !important;">
+        <h3 style="color: #00D2BE !important; margin: 0 0 15px 0 !important; font-weight: bold !important;">
+            🌊 Análisis de Riesgo Hídrico por CUIT
+        </h3>
+        <p style="color: #ffffff !important; margin: 0 !important; font-size: 1.1rem !important;">
+            Consulta automática de coordenadas y análisis de riesgo de inundación
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Input para CUIT
+    cuit_input = st.text_input(
+        "🏢 Ingresá el CUIT del productor:",
+        placeholder="30-12345678-9",
+        key="cuit_input_inundacion",
+        help="💡 Consulta automática de coordenadas para análisis de riesgo hídrico"
+    )
+    
+    # Opción para elegir entre campos activos o históricos
+    solo_activos = st.radio(
+        "¿Qué campos querés analizar?",
+        ["Solo campos activos", "Todos los campos (incluye históricos)"],
+        key="tipo_campos_cuit_inundacion",
+        horizontal=True
+    ) == "Solo campos activos"
+    
+    # Configuración del análisis
+    st.markdown("### ⚙️ Configuración del Análisis")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        anos_analisis = st.slider(
+            "📅 Años de análisis:",
+            min_value=2005,
+            max_value=2025,
+            value=(2005, 2025),
+            help="Rango de años para análisis histórico de inundaciones",
+            key="anos_analisis_cuit"
+        )
+    
+    with col2:
+        umbral_inundacion = st.slider(
+            "🌊 Umbral de inundación (%):",
+            min_value=5,
+            max_value=50,
+            value=20,
+            help="Porcentaje mínimo de área inundada para considerar evento significativo",
+            key="umbral_inundacion_cuit"
+        )
+    
+    # BOTÓN DE ANÁLISIS DE INUNDACIÓN POR CUIT
+    if st.button("🌊 Analizar Riesgo Hídrico por CUIT", type="primary", key="btn_analizar_inundacion_cuit"):
+        if cuit_input:
+            try:
+                with st.spinner("🔄 Consultando campos y analizando riesgo hídrico..."):
+                    # Procesar campos del CUIT
+                    poligonos_data = procesar_campos_cuit(cuit_input, solo_activos)
+                    
+                    if not poligonos_data:
+                        st.error("❌ No se encontraron campos válidos para este CUIT")
+                        return
+                    
+                    # Mostrar información de campos encontrados
+                    st.success(f"✅ Se encontraron {len(poligonos_data)} campos con coordenadas")
+                    
+                    # Crear AOI desde los campos del CUIT
+                    aoi = crear_ee_feature_collection_web(poligonos_data)
+                    if not aoi:
+                        st.error("❌ No se pudo crear el área de interés")
+                        return
+                    
+                    # Ejecutar análisis de inundación
+                    resultado_inundacion = analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion)
+                    
+                    if resultado_inundacion:
+                        # GUARDAR RESULTADOS DE INUNDACIÓN
+                        st.session_state.resultados_analisis = {
+                            'tipo_analisis': 'inundacion',
+                            'resultado_inundacion': resultado_inundacion,
+                            'aoi': aoi,
+                            'archivo_info': f"CUIT: {cuit_input} - {len(poligonos_data)} campos",
+                            'nombres_archivos': [f"CUIT_{normalizar_cuit(cuit_input).replace('-', '')}_inundacion"],
+                            'fuente': 'CUIT',
+                            'config_analisis': {
+                                'anos_analisis': anos_analisis,
+                                'umbral_inundacion': umbral_inundacion
+                            },
+                            'cuit_info': {
+                                'cuit': cuit_input,
+                                'campos_encontrados': len(poligonos_data),
+                                'solo_activos': solo_activos
+                            }
+                        }
+                        st.session_state.analisis_completado = True
+                        st.success("🎉 ¡Análisis de riesgo hídrico completado!")
+                        st.info("📋 Los resultados aparecerán abajo.")
+                        
+                        # Mostrar resumen rápido
+                        st.markdown("### 📊 Resumen Rápido - Riesgo Hídrico")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Área Total", f"{resultado_inundacion.get('area_total_ha', 0):,.1f} ha")
+                        with col2:
+                            st.metric("Años Analizados", f"{anos_analisis[1] - anos_analisis[0] + 1} años")
+                        with col3:
+                            st.metric("Riesgo Promedio", f"{resultado_inundacion.get('riesgo_promedio', 0):.1f}%")
+                    else:
+                        st.error("❌ No se pudo analizar el riesgo hídrico")
+                        st.session_state.analisis_completado = False
+                        
             except ValueError as e:
                 st.error("❌ CUIT inválido. Verificá el formato (XX-XXXXXXXX-X)")
             except Exception as e:
