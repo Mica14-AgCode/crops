@@ -212,22 +212,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Logo VISU con tagline para cultivos - DISEÑO ELEGANTE QUE YA FUNCIONA
-st.markdown("""
-<div class="visu-logo-container">
-    <div class="minimal-container">
-        <div class="visu-minimal">VISU</div>
-        <div class="eye-underline">
-            <div class="eye-dot"></div>
-        </div>
-        <div class="tagline">Análisis de Rotación de Cultivos</div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-# Título principal
-st.markdown('<h1 class="main-header">🌾 Análisis de Rotación de Cultivos</h1>', unsafe_allow_html=True)
-st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Sube tus archivos KMZ y obtén análisis detallado de cultivos y rotación</p>', unsafe_allow_html=True)
+# ⚠️ AVISO IMPORTANTE SOBRE MÓVILES MOVIDO AL MAIN()
 
 # ⚠️ AVISO IMPORTANTE SOBRE MÓVILES
 st.markdown("""
@@ -1618,7 +1603,7 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
     return m
 
 def main():
-    # Logo VISU con tagline para cultivos - DISEÑO ELEGANTE QUE YA FUNCIONA
+    # Logo VISU con tagline correcto - DISEÑO ELEGANTE QUE YA FUNCIONA
     st.markdown("""
     <div class="visu-logo-container">
         <div class="minimal-container">
@@ -1626,7 +1611,7 @@ def main():
             <div class="eye-underline">
                 <div class="eye-dot"></div>
             </div>
-            <div class="tagline">Análisis de Rotación de Cultivos</div>
+            <div class="tagline">VISUALIZE WITH SUPERPOWERS</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
