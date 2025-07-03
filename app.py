@@ -221,7 +221,7 @@ def init_earth_engine():
     try:
         proyecto_id = "carbide-kayak-459911-n3"
         
-        # Intentar autenticación con Service Account
+        # Intentar autenticación con Service Account - SILENCIOSA
         if "google_credentials" in st.secrets:
             # Producción: usar Service Account desde Streamlit Secrets
             credentials = st.secrets["google_credentials"]
@@ -229,7 +229,6 @@ def init_earth_engine():
                 email=credentials["client_email"],
                 key_data=json.dumps(dict(credentials))
             ), project=proyecto_id)
-            st.success("🔐 Autenticado con Service Account (Streamlit Cloud)")
             
         elif 'GOOGLE_APPLICATION_CREDENTIALS' in os.environ:
             # Desarrollo: usar Service Account desde archivo local
@@ -238,13 +237,11 @@ def init_earth_engine():
                 email=None,
                 key_file=credentials_path
             ), project=proyecto_id)
-            st.success("🔐 Autenticado con Service Account (Local)")
             
         else:
             # Fallback: autenticación interactiva para desarrollo
             ee.Authenticate()
             ee.Initialize(project=proyecto_id)
-            st.success("🔐 Autenticado interactivamente")
         
         # Verificar conexión
         ee.Number(1).getInfo()
@@ -1071,31 +1068,11 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         except Exception as e:
             pass  # Si falla, continuar sin tiles
     
-    # 🔥 CONTORNO SÚPER SIMPLE CON DEBUG COMPLETO
+    # 🔥 CONTORNO SÚPER SIMPLE - SIN DEBUG AQUÍ (ESTÁ ARRIBA)
     try:
-        print("🔍 === DEBUG CONTORNO INICIADO ===")
-        print(f"🔍 Tipo de AOI: {type(aoi)}")
-        print(f"🔍 AOI: {aoi}")
-        
-        print("🔍 Intentando obtener geometría del AOI...")
         aoi_geojson = aoi.getInfo()
-        print(f"✅ AOI obtenido - Tipo: {type(aoi_geojson)}")
         
         if aoi_geojson:
-            print(f"🎯 Contenido del AOI GeoJSON:")
-            print(f"   - Claves: {list(aoi_geojson.keys()) if isinstance(aoi_geojson, dict) else 'No es dict'}")
-            
-            if isinstance(aoi_geojson, dict):
-                print(f"   - Tipo: {aoi_geojson.get('type', 'Sin tipo')}")
-                if 'features' in aoi_geojson:
-                    print(f"   - Features: {len(aoi_geojson['features'])}")
-                    for i, feature in enumerate(aoi_geojson['features'][:2]):  # Solo primeras 2
-                        print(f"     Feature {i}: {feature.get('type', 'Sin tipo')}")
-                        if 'geometry' in feature:
-                            print(f"     Geometry: {feature['geometry'].get('type', 'Sin tipo')}")
-            
-            print(f"🎯 Agregando contorno simple y visible...")
-            
             # MÉTODO ULTRA SIMPLE: Solo línea roja gruesa
             contorno_simple = folium.GeoJson(
                 aoi_geojson,
@@ -1112,30 +1089,34 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
                 popup="🌾 CAMPO ANALIZADO"
             )
             contorno_simple.add_to(m)
-            print("✅ Contorno agregado al mapa exitosamente")
             
-        else:
-            print("❌ AOI geojson es None o vacío")
+            # MÉTODO ALTERNATIVO: Marcadores en esquinas
+            try:
+                aoi_simple = aoi.geometry().bounds().getInfo()
+                if aoi_simple and 'coordinates' in aoi_simple:
+                    coords = aoi_simple['coordinates'][0]
+                    # Crear marcadores en las esquinas para asegurar visibilidad
+                    for i, coord in enumerate(coords[:4]):  # Solo 4 esquinas
+                        folium.CircleMarker(
+                            location=[coord[1], coord[0]],  # lat, lon
+                            radius=15,
+                            popup=f"🔴 Esquina {i+1}",
+                            color="red",
+                            fillColor="yellow",
+                            fillOpacity=1.0,
+                            weight=5
+                        ).add_to(m)
+            except:
+                pass
+            
     except Exception as e:
-        print(f"❌ Error agregando contorno: {e}")
-        import traceback
-        print("📋 Traceback completo:")
-        traceback.print_exc()
-        
-        # Intentar método alternativo
-        print("🔄 Intentando método alternativo...")
+        # Si falla, intentar método alternativo
         try:
-            # Método simple directo sin getInfo()
             bounds = aoi.geometry().bounds()
-            print(f"✅ Bounds obtenidos: {bounds}")
-            
-            # Crear polígono simple con bounds
             bounds_info = bounds.getInfo()
-            print(f"✅ Bounds info: {bounds_info}")
             
             if bounds_info and 'coordinates' in bounds_info:
                 coords = bounds_info['coordinates'][0]
-                print(f"✅ Coordenadas extraídas: {len(coords)} puntos")
                 
                 # Crear GeoJSON simple
                 simple_geojson = {
@@ -1161,37 +1142,9 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
                     }
                 )
                 contorno_alternativo.add_to(m)
-                print("✅ Contorno alternativo agregado")
                 
         except Exception as e2:
-            print(f"❌ Error en método alternativo: {e2}")
-            traceback.print_exc()
-    
-    print("🔍 === DEBUG CONTORNO TERMINADO ===")
-    print(f"🔍 Número de capas en el mapa: {len(m._children)}")
-    print(f"🔍 Capas del mapa: {list(m._children.keys())}")
-    
-    # Forzar que el contorno aparezca arriba
-    print("🔍 Intentando agregar contorno con método directo...")
-    try:
-        # Método más directo posible
-        aoi_simple = aoi.geometry().bounds().getInfo()
-        if aoi_simple:
-            coords = aoi_simple['coordinates'][0]
-            # Crear marcadores en las esquinas para asegurar visibilidad
-            for i, coord in enumerate(coords[:4]):  # Solo 4 esquinas
-                folium.CircleMarker(
-                    location=[coord[1], coord[0]],  # lat, lon
-                    radius=15,
-                    popup=f"🔴 Esquina {i+1}",
-                    color="red",
-                    fillColor="yellow",
-                    fillOpacity=1.0,
-                    weight=5
-                ).add_to(m)
-                print(f"✅ Marcador {i+1} agregado en [{coord[1]}, {coord[0]}]")
-    except Exception as e3:
-        print(f"❌ Error agregando marcadores: {e3}")
+            pass  # Si todo falla, continuar sin contorno
     
     # Crear leyenda con información de cultivos
     legend_added = False
@@ -1621,20 +1574,7 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
-    # ⚠️ AVISO IMPORTANTE SOBRE MÓVILES - SOLO UNA VEZ
-    st.markdown("""
-    <div style="background-color: #fff3cd; border-left: 5px solid #ffc107; 
-                padding: 15px; margin: 20px 0; border-radius: 8px;">
-        <h4 style="color: #856404; margin: 0 0 10px 0;">
-            📱 <strong>IMPORTANTE: Uso en Dispositivos Móviles</strong>
-        </h4>
-        <p style="color: #856404; margin: 0; line-height: 1.4;">
-            <strong>⚠️ Limitación conocida:</strong> Los archivos KMZ pueden no subir correctamente en navegadores móviles (iPhone, Android).<br>
-            <strong>💡 Solución recomendada:</strong> Usa una computadora de escritorio o laptop para mejores resultados.<br>
-            <strong>🔄 Alternativa:</strong> Si solo tienes móvil, prueba con diferentes navegadores (Chrome, Firefox, Safari).
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    # AVISO MÓVILES ELIMINADO
     
     st.markdown("---")
     
@@ -1654,7 +1594,7 @@ def main():
         st.error("❌ No se pudo conectar con Google Earth Engine. Verifica la configuración.")
         return
     
-    st.success("✅ Google Earth Engine conectado correctamente")
+    # MENSAJE DE CONEXIÓN ELIMINADO
     
     # Área de upload MEJORADA - Negro con letras blancas que se ven bien
     st.markdown("""
@@ -1811,6 +1751,38 @@ def main():
                 f"{area_agricola_sel:,.1f} ha agrícolas",
                 help=f"{cultivos_sel:,} cultivos detectados"
             )
+        
+        # 🔍 DEBUG: Límites del Campo
+        with st.expander("🔍 DEBUG: Límites del Campo", expanded=True):
+            st.text("=== INFORMACIÓN DE DEBUG ===")
+            st.text(f"Tipo de AOI: {type(aoi)}")
+            st.text(f"AOI: {str(aoi)[:100]}...")
+            
+            try:
+                st.text("Intentando obtener geometría del AOI...")
+                aoi_geojson = aoi.getInfo()
+                st.text(f"✅ AOI obtenido - Tipo: {type(aoi_geojson)}")
+                
+                if aoi_geojson:
+                    st.text("🎯 Contenido del AOI GeoJSON:")
+                    st.text(f"   - Claves: {list(aoi_geojson.keys()) if isinstance(aoi_geojson, dict) else 'No es dict'}")
+                    
+                    if isinstance(aoi_geojson, dict):
+                        st.text(f"   - Tipo: {aoi_geojson.get('type', 'Sin tipo')}")
+                        if 'features' in aoi_geojson:
+                            st.text(f"   - Features: {len(aoi_geojson['features'])}")
+                            for i, feature in enumerate(aoi_geojson['features'][:2]):
+                                st.text(f"     Feature {i}: {feature.get('type', 'Sin tipo')}")
+                                if 'geometry' in feature:
+                                    st.text(f"     Geometry: {feature['geometry'].get('type', 'Sin tipo')}")
+                else:
+                    st.text("❌ AOI geojson es None o vacío")
+                    
+            except Exception as e:
+                st.text(f"❌ Error obteniendo AOI: {e}")
+                st.text("📋 Traceback:")
+                import traceback
+                st.text(traceback.format_exc())
         
         # Mostrar mapa
         try:
