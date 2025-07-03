@@ -1825,6 +1825,247 @@ def procesar_campos_cuit(cuit, solo_activos=True):
         st.error(f"Error procesando CUIT {cuit}: {e}")
         return []
 
+def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
+    """
+    Analiza el riesgo de inundación usando datos de Earth Engine
+    Basado en el código de valuación de campos
+    """
+    try:
+        # Obtener geometría del AOI
+        if hasattr(aoi, 'geometry'):
+            geometry = aoi.geometry()
+        else:
+            geometry = aoi
+        
+        # Configurar años de análisis (excluir 2014 como en el código original)
+        anos_disponibles = list(range(anos_analisis[0], anos_analisis[1] + 1))
+        if 2014 in anos_disponibles:
+            anos_disponibles.remove(2014)
+        
+        # Inicializar resultados
+        resultados_por_año = {}
+        eventos_inundacion = []
+        
+        # Procesamiento por batches de años (para evitar timeout)
+        batch_size = 3
+        for i in range(0, len(anos_disponibles), batch_size):
+            batch_anos = anos_disponibles[i:i+batch_size]
+            
+            for año in batch_anos:
+                try:
+                    # Definir período de análisis (abril a marzo del año siguiente)
+                    fecha_inicio = f"{año}-04-01"
+                    fecha_fin = f"{año+1}-03-31"
+                    
+                    # Obtener datos de inundación usando diferentes sensores
+                    inundacion_data = obtener_datos_inundacion_año(geometry, fecha_inicio, fecha_fin)
+                    
+                    if inundacion_data:
+                        # Procesar datos de inundación
+                        area_total = geometry.area().getInfo() / 10000  # Convertir a hectáreas
+                        area_inundada = inundacion_data.get('area_inundada_ha', 0)
+                        porcentaje_inundacion = (area_inundada / area_total * 100) if area_total > 0 else 0
+                        
+                        resultados_por_año[año] = {
+                            'area_total_ha': area_total,
+                            'area_inundada_ha': area_inundada,
+                            'porcentaje_inundacion': porcentaje_inundacion,
+                            'frecuencia_eventos': inundacion_data.get('frecuencia_eventos', 0),
+                            'duracion_maxima': inundacion_data.get('duracion_maxima', 0)
+                        }
+                        
+                        # Registrar eventos significativos
+                        if porcentaje_inundacion >= umbral_inundacion:
+                            eventos_inundacion.append({
+                                'año': año,
+                                'porcentaje': porcentaje_inundacion,
+                                'area_ha': area_inundada,
+                                'severidad': 'Alta' if porcentaje_inundacion > 40 else 'Media' if porcentaje_inundacion > 20 else 'Baja'
+                            })
+                        
+                        # Mostrar progreso
+                        st.write(f"✅ Año {año}: {porcentaje_inundacion:.1f}% inundado ({area_inundada:.1f} ha)")
+                    
+                except Exception as e:
+                    st.warning(f"⚠️ Error procesando año {año}: {str(e)}")
+                    continue
+        
+        # Calcular estadísticas generales
+        if resultados_por_año:
+            porcentajes = [r['porcentaje_inundacion'] for r in resultados_por_año.values()]
+            areas_inundadas = [r['area_inundada_ha'] for r in resultados_por_año.values()]
+            
+            # Crear DataFrame para análisis
+            df_inundacion = pd.DataFrame([
+                {
+                    'Año': año,
+                    'Área Total (ha)': datos['area_total_ha'],
+                    'Área Inundada (ha)': datos['area_inundada_ha'],
+                    'Porcentaje Inundación': datos['porcentaje_inundacion'],
+                    'Frecuencia Eventos': datos['frecuencia_eventos'],
+                    'Duración Máxima (días)': datos['duracion_maxima']
+                }
+                for año, datos in resultados_por_año.items()
+            ])
+            
+            # Calcular métricas de riesgo
+            riesgo_promedio = np.mean(porcentajes)
+            riesgo_maximo = np.max(porcentajes)
+            frecuencia_eventos_significativos = len(eventos_inundacion)
+            años_con_eventos = len([e for e in eventos_inundacion if e['porcentaje'] >= umbral_inundacion])
+            probabilidad_evento = años_con_eventos / len(anos_disponibles) * 100
+            
+            # Clasificar riesgo
+            if riesgo_promedio < 10:
+                categoria_riesgo = "Bajo"
+            elif riesgo_promedio < 25:
+                categoria_riesgo = "Medio"
+            elif riesgo_promedio < 50:
+                categoria_riesgo = "Alto"
+            else:
+                categoria_riesgo = "Muy Alto"
+            
+            # Generar mapa de riesgo
+            mapa_riesgo = crear_mapa_riesgo_hidrico(geometry, resultados_por_año, eventos_inundacion)
+            
+            return {
+                'df_inundacion': df_inundacion,
+                'area_total_ha': np.mean([r['area_total_ha'] for r in resultados_por_año.values()]),
+                'riesgo_promedio': riesgo_promedio,
+                'riesgo_maximo': riesgo_maximo,
+                'categoria_riesgo': categoria_riesgo,
+                'eventos_significativos': eventos_inundacion,
+                'frecuencia_eventos': frecuencia_eventos_significativos,
+                'probabilidad_evento': probabilidad_evento,
+                'años_analizados': len(anos_disponibles),
+                'mapa_riesgo': mapa_riesgo,
+                'resultados_por_año': resultados_por_año
+            }
+        else:
+            return None
+            
+    except Exception as e:
+        st.error(f"Error en análisis de riesgo hídrico: {str(e)}")
+        return None
+
+def obtener_datos_inundacion_año(geometry, fecha_inicio, fecha_fin):
+    """
+    Obtiene datos de inundación para un año específico
+    Combina datos de Sentinel-1 (radar para detección de agua)
+    """
+    try:
+        # Colección de Sentinel-1 (radar, detecta agua)
+        s1_collection = ee.ImageCollection("COPERNICUS/S1_GRD") \
+            .filterBounds(geometry) \
+            .filterDate(fecha_inicio, fecha_fin) \
+            .filter(ee.Filter.eq('instrumentMode', 'IW')) \
+            .filter(ee.Filter.eq('orbitProperties_pass', 'DESCENDING'))
+        
+        if s1_collection.size().getInfo() > 0:
+            # Procesar imágenes Sentinel-1
+            s1_agua = s1_collection.map(lambda img: procesar_sentinel1_agua(img))
+            
+            # Obtener máscara de agua más frecuente
+            agua_frecuencia = s1_agua.mean()
+            umbral_agua = 0.3  # 30% de frecuencia mínima
+            
+            mascara_agua = agua_frecuencia.gt(umbral_agua)
+            
+            # Calcular área inundada
+            stats = mascara_agua.reduceRegion(
+                reducer=ee.Reducer.sum(),
+                geometry=geometry,
+                scale=30,
+                maxPixels=1e9
+            )
+            
+            pixeles_agua = stats.getInfo().get('agua', 0)
+            area_inundada_ha = pixeles_agua * 30 * 30 / 10000  # Convertir a hectáreas
+            
+            # Contar eventos (imágenes con agua detectada)
+            frecuencia_eventos = s1_collection.size().getInfo()
+            
+            return {
+                'area_inundada_ha': area_inundada_ha,
+                'frecuencia_eventos': frecuencia_eventos,
+                'duracion_maxima': frecuencia_eventos * 12  # Estimación basada en revisitas
+            }
+        else:
+            return None
+            
+    except Exception as e:
+        print(f"Error obteniendo datos de inundación: {str(e)}")
+        return None
+
+def procesar_sentinel1_agua(imagen):
+    """
+    Procesa imagen Sentinel-1 para detectar agua
+    """
+    try:
+        # Usar banda VH (mejor para detección de agua)
+        vh = imagen.select('VH')
+        
+        # Umbral para detectar agua (valores bajos indican agua)
+        umbral_agua = -18  # dB
+        
+        # Crear máscara de agua
+        mascara_agua = vh.lt(umbral_agua)
+        
+        # Aplicar filtro para reducir ruido
+        mascara_agua = mascara_agua.focal_median(2)
+        
+        return mascara_agua.rename('agua')
+        
+    except Exception as e:
+        print(f"Error procesando Sentinel-1: {str(e)}")
+        return imagen.select('VH').multiply(0)
+
+def crear_mapa_riesgo_hidrico(geometry, resultados_por_año, eventos_inundacion):
+    """
+    Crea un mapa interactivo de riesgo hídrico
+    """
+    try:
+        # Obtener centroide de la geometría
+        centroide = geometry.centroid().getInfo()['coordinates']
+        
+        # Crear mapa base
+        mapa = folium.Map(
+            location=[centroide[1], centroide[0]],
+            zoom_start=12,
+            tiles='OpenStreetMap'
+        )
+        
+        # Añadir polígono del campo
+        if hasattr(geometry, 'getInfo'):
+            coords = geometry.getInfo()['coordinates'][0]
+            folium.Polygon(
+                locations=[[coord[1], coord[0]] for coord in coords],
+                popup="Área de Análisis",
+                color='blue',
+                fillColor='lightblue',
+                fillOpacity=0.3,
+                weight=2
+            ).add_to(mapa)
+        
+        # Añadir marcadores de eventos significativos
+        for evento in eventos_inundacion:
+            color = 'red' if evento['severidad'] == 'Alta' else 'orange' if evento['severidad'] == 'Media' else 'yellow'
+            
+            folium.CircleMarker(
+                location=[centroide[1], centroide[0]],
+                radius=evento['porcentaje'] / 5,  # Tamaño proporcional al porcentaje
+                popup=f"Año {evento['año']}: {evento['porcentaje']:.1f}% inundado",
+                color=color,
+                fillColor=color,
+                fillOpacity=0.7
+            ).add_to(mapa)
+        
+        return mapa
+        
+    except Exception as e:
+        print(f"Error creando mapa de riesgo: {str(e)}")
+        return None
+
 def main():
     # Logo VISU con tagline correcto - DISEÑO ELEGANTE QUE YA FUNCIONA
     st.markdown("""
@@ -1862,13 +2103,22 @@ def main():
     
     with tabs[0]:
         mostrar_analisis_kmz()
+        # MOSTRAR RESULTADOS DENTRO DE LA PESTAÑA KMZ
+        if st.session_state.analisis_completado and st.session_state.resultados_analisis:
+            if st.session_state.resultados_analisis.get('fuente') == 'KMZ':
+                # Verificar el tipo de análisis para mostrar los resultados apropiados
+                tipo_analisis = st.session_state.resultados_analisis.get('tipo_analisis', 'cultivos')
+                if tipo_analisis == 'cultivos':
+                    mostrar_resultados_analisis()
+                elif tipo_analisis == 'inundacion':
+                    mostrar_resultados_inundacion()
     
     with tabs[1]:
         mostrar_analisis_cuit()
-    
-    # MOSTRAR RESULTADOS PERSISTENTES - FUERA DE LAS PESTAÑAS
-    if st.session_state.analisis_completado and st.session_state.resultados_analisis:
-        mostrar_resultados_analisis()
+        # MOSTRAR RESULTADOS DENTRO DE LA PESTAÑA CUIT
+        if st.session_state.analisis_completado and st.session_state.resultados_analisis:
+            if st.session_state.resultados_analisis.get('fuente') == 'CUIT':
+                mostrar_resultados_analisis()
     
     st.markdown("---")
     st.markdown("""
@@ -1879,6 +2129,18 @@ def main():
 
 def mostrar_analisis_kmz():
     """Muestra la interfaz para análisis desde archivos KMZ"""
+    
+    # SUB-PESTAÑAS PARA TIPOS DE ANÁLISIS
+    sub_tabs = st.tabs(["🌾 Cultivos y Rotación", "🌊 Riesgo Hídrico"])
+    
+    with sub_tabs[0]:
+        mostrar_analisis_cultivos_kmz()
+    
+    with sub_tabs[1]:
+        mostrar_analisis_inundacion_kmz()
+
+def mostrar_analisis_cultivos_kmz():
+    """Análisis de cultivos desde archivos KMZ"""
     
     # 🔥 ÁREA DE UPLOAD - FORZADO CON !IMPORTANT PARA QUE FUNCIONE
     st.markdown("""
@@ -1899,7 +2161,7 @@ def mostrar_analisis_kmz():
         type=['kmz'],
         accept_multiple_files=True,
         help="💡 Puedes subir múltiples archivos KMZ para analizar cultivos y rotación. ⚠️ En móviles puede no funcionar - usa computadora para mejores resultados.",
-        key="kmz_uploader"
+        key="kmz_uploader_cultivos"
     )
     
     if uploaded_files:
@@ -1911,7 +2173,7 @@ def mostrar_analisis_kmz():
                 st.write(f"📄 **{file.name}** - {file_size_mb:.2f} MB ({file.size:,} bytes)")
         
         # BOTÓN DE ANÁLISIS - SOLO PROCESA Y GUARDA EN SESSION STATE
-        if st.button("🚀 Analizar Cultivos y Rotación", type="primary", key="btn_analizar_kmz"):
+        if st.button("🚀 Analizar Cultivos y Rotación", type="primary", key="btn_analizar_cultivos_kmz"):
             with st.spinner("🔄 Procesando análisis completo..."):
                 # Procesar archivos KMZ
                 todos_los_poligonos = []
@@ -1952,6 +2214,7 @@ def mostrar_analisis_kmz():
                 if df_cultivos is not None and not df_cultivos.empty:
                     # GUARDAR TODO EN SESSION STATE
                     st.session_state.resultados_analisis = {
+                        'tipo_analisis': 'cultivos',
                         'df_cultivos': df_cultivos,
                         'area_total': area_total,
                         'tiles_urls': tiles_urls,
@@ -1978,6 +2241,122 @@ def mostrar_analisis_kmz():
                         st.metric("Archivo", f"{len(uploaded_files)} KMZ")
                 else:
                     st.error("❌ No se pudieron analizar los cultivos")
+                    st.session_state.analisis_completado = False
+
+def mostrar_analisis_inundacion_kmz():
+    """Análisis de riesgo hídrico desde archivos KMZ"""
+    
+    # 🔥 ÁREA DE UPLOAD PARA INUNDACIÓN
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #2a2a2a, #1a1a1a) !important; 
+                padding: 25px !important; border-radius: 15px !important; margin: 20px 0 !important; 
+                border: 2px solid #00D2BE !important; text-align: center !important;">
+        <h3 style="color: #00D2BE !important; margin: 0 0 15px 0 !important; font-weight: bold !important;">
+            🌊 Análisis de Riesgo Hídrico
+        </h3>
+        <p style="color: #ffffff !important; margin: 0 !important; font-size: 1.1rem !important;">
+            Analiza el riesgo de inundación basado en datos históricos 2005-2025
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    uploaded_files_inund = st.file_uploader(
+        "🌊 Selecciona tus archivos KMZ",
+        type=['kmz'],
+        accept_multiple_files=True,
+        help="💡 Archivos KMZ para análisis de riesgo hídrico. El análisis incluye frecuencia de inundación, áreas afectadas y mapas de riesgo.",
+        key="kmz_uploader_inundacion"
+    )
+    
+    if uploaded_files_inund:
+        st.success(f"✅ {len(uploaded_files_inund)} archivo(s) subido(s) para análisis hídrico")
+        
+        with st.expander("📋 Ver detalles de archivos subidos"):
+            for file in uploaded_files_inund:
+                file_size_mb = file.size / (1024 * 1024)
+                st.write(f"📄 **{file.name}** - {file_size_mb:.2f} MB ({file.size:,} bytes)")
+        
+        # Configuración del análisis
+        st.markdown("### ⚙️ Configuración del Análisis")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            anos_analisis = st.slider(
+                "📅 Años de análisis:",
+                min_value=2005,
+                max_value=2025,
+                value=(2005, 2025),
+                help="Rango de años para análisis histórico de inundaciones"
+            )
+        
+        with col2:
+            umbral_inundacion = st.slider(
+                "🌊 Umbral de inundación (%):",
+                min_value=5,
+                max_value=50,
+                value=20,
+                help="Porcentaje mínimo de área inundada para considerar evento significativo"
+            )
+        
+        # BOTÓN DE ANÁLISIS DE INUNDACIÓN
+        if st.button("🌊 Analizar Riesgo Hídrico", type="primary", key="btn_analizar_inundacion_kmz"):
+            with st.spinner("🔄 Analizando riesgo hídrico (esto puede tardar varios minutos)..."):
+                # Procesar archivos KMZ
+                todos_los_poligonos = []
+                nombres_archivos = []
+                
+                for uploaded_file in uploaded_files_inund:
+                    poligonos = procesar_kmz_uploaded(uploaded_file)
+                    todos_los_poligonos.extend(poligonos)
+                    nombre_limpio = uploaded_file.name.replace('.kmz', '').replace('.KMZ', '')
+                    nombre_limpio = re.sub(r'[^\w\s-]', '', nombre_limpio).strip()
+                    nombre_limpio = re.sub(r'[-\s]+', '_', nombre_limpio)
+                    nombres_archivos.append(nombre_limpio)
+                
+                if not todos_los_poligonos:
+                    st.error("❌ No se encontraron polígonos válidos en los archivos")
+                    st.session_state.analisis_completado = False
+                    return
+                
+                # Crear AOI
+                aoi = crear_ee_feature_collection_web(todos_los_poligonos)
+                if not aoi:
+                    st.error("❌ No se pudo crear el área de interés")
+                    st.session_state.analisis_completado = False
+                    return
+                
+                # Ejecutar análisis de inundación
+                resultado_inundacion = analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion)
+                
+                if resultado_inundacion:
+                    # GUARDAR RESULTADOS DE INUNDACIÓN
+                    st.session_state.resultados_analisis = {
+                        'tipo_analisis': 'inundacion',
+                        'resultado_inundacion': resultado_inundacion,
+                        'aoi': aoi,
+                        'archivo_info': f"{len(uploaded_files_inund)} archivo(s) - {len(todos_los_poligonos)} polígonos",
+                        'nombres_archivos': nombres_archivos,
+                        'fuente': 'KMZ',
+                        'config_analisis': {
+                            'anos_analisis': anos_analisis,
+                            'umbral_inundacion': umbral_inundacion
+                        }
+                    }
+                    st.session_state.analisis_completado = True
+                    st.success("🎉 ¡Análisis de riesgo hídrico completado!")
+                    st.info("📋 Los resultados aparecerán abajo.")
+                    
+                    # Mostrar resumen rápido
+                    st.markdown("### 📊 Resumen Rápido - Riesgo Hídrico")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Área Total", f"{resultado_inundacion.get('area_total_ha', 0):,.1f} ha")
+                    with col2:
+                        st.metric("Años Analizados", f"{anos_analisis[1] - anos_analisis[0] + 1} años")
+                    with col3:
+                        st.metric("Riesgo Promedio", f"{resultado_inundacion.get('riesgo_promedio', 0):.1f}%")
+                else:
+                    st.error("❌ No se pudo analizar el riesgo hídrico")
                     st.session_state.analisis_completado = False
 
 def mostrar_analisis_cuit():
@@ -2452,6 +2831,213 @@ def mostrar_resultados_analisis():
         st.session_state.analisis_completado = False
         st.session_state.resultados_analisis = None
         # NO usar st.rerun() para evitar salto de pestañas
+
+def mostrar_resultados_inundacion():
+    """Muestra los resultados del análisis de inundación"""
+    st.markdown("---")
+    st.markdown("## 🌊 Resultados del Análisis de Riesgo Hídrico")
+    
+    # Extraer datos de session state
+    datos = st.session_state.resultados_analisis
+    resultado_inundacion = datos['resultado_inundacion']
+    config_analisis = datos.get('config_analisis', {})
+    
+    # Mostrar información del análisis
+    st.info(f"📋 **Análisis de Riesgo Hídrico**: {datos.get('archivo_info', 'Archivos KMZ')}")
+    
+    # MÉTRICAS PRINCIPALES
+    st.markdown("### 📊 Métricas de Riesgo")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "Área Analizada", 
+            f"{resultado_inundacion['area_total_ha']:,.1f} ha"
+        )
+    
+    with col2:
+        st.metric(
+            "Riesgo Promedio", 
+            f"{resultado_inundacion['riesgo_promedio']:.1f}%",
+            help="Porcentaje promedio de área inundada por año"
+        )
+    
+    with col3:
+        categoria = resultado_inundacion['categoria_riesgo']
+        color_categoria = {
+            'Bajo': 'normal',
+            'Medio': 'inverse',
+            'Alto': 'off', 
+            'Muy Alto': 'off'
+        }.get(categoria, 'normal')
+        
+        st.metric(
+            "Categoría de Riesgo", 
+            categoria,
+            help=f"Clasificación basada en riesgo promedio de {resultado_inundacion['riesgo_promedio']:.1f}%"
+        )
+    
+    with col4:
+        st.metric(
+            "Probabilidad de Evento", 
+            f"{resultado_inundacion['probabilidad_evento']:.1f}%",
+            help=f"Probabilidad de evento significativo (>{config_analisis.get('umbral_inundacion', 20)}%)"
+        )
+    
+    # ANÁLISIS TEMPORAL
+    st.markdown("### 📅 Análisis Temporal")
+    
+    if 'df_inundacion' in resultado_inundacion:
+        df_inundacion = resultado_inundacion['df_inundacion']
+        
+        # Gráfico de evolución temporal
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        # Gráfico de barras con colores según severidad
+        colors = ['red' if x > 40 else 'orange' if x > 20 else 'lightblue' for x in df_inundacion['Porcentaje Inundación']]
+        
+        ax.bar(df_inundacion['Año'], df_inundacion['Porcentaje Inundación'], color=colors, alpha=0.7)
+        ax.axhline(y=config_analisis.get('umbral_inundacion', 20), color='red', linestyle='--', alpha=0.5, label='Umbral de Riesgo')
+        ax.set_xlabel('Año')
+        ax.set_ylabel('Porcentaje de Área Inundada (%)')
+        ax.set_title('Evolución del Riesgo de Inundación por Año')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig)
+        
+        # Tabla de resultados por año
+        st.markdown("### 📋 Detalle por Año")
+        st.dataframe(df_inundacion, use_container_width=True)
+    
+    # EVENTOS SIGNIFICATIVOS
+    if resultado_inundacion['eventos_significativos']:
+        st.markdown("### ⚠️ Eventos Significativos")
+        
+        for evento in resultado_inundacion['eventos_significativos']:
+            severity_color = {
+                'Alta': '🔴',
+                'Media': '🟠', 
+                'Baja': '🟡'
+            }.get(evento['severidad'], '🔵')
+            
+            st.warning(f"{severity_color} **Año {evento['año']}**: {evento['porcentaje']:.1f}% inundado ({evento['area_ha']:.1f} ha) - Severidad: {evento['severidad']}")
+    else:
+        st.success("✅ **No se detectaron eventos significativos de inundación** en el período analizado")
+    
+    # MAPA DE RIESGO
+    if 'mapa_riesgo' in resultado_inundacion and resultado_inundacion['mapa_riesgo']:
+        st.markdown("### 🗺️ Mapa de Riesgo Hídrico")
+        st.write("Visualización de eventos de inundación en el área analizada:")
+        
+        # Mostrar el mapa
+        map_data = st_folium(resultado_inundacion['mapa_riesgo'], width=None, height=500, key="mapa_riesgo_hidrico")
+        
+        # Explicación del mapa
+        with st.expander("💡 Cómo interpretar el mapa"):
+            st.markdown("""
+            **🔴 Círculos rojos**: Eventos de alta severidad (>40% inundado)  
+            **🟠 Círculos naranjas**: Eventos de severidad media (20-40% inundado)  
+            **🟡 Círculos amarillos**: Eventos de baja severidad (<20% inundado)  
+            **📏 Tamaño del círculo**: Proporcional al porcentaje de área inundada  
+            **🔵 Polígono azul**: Área total analizada
+            """)
+    
+    # RECOMENDACIONES
+    st.markdown("### 💡 Recomendaciones")
+    
+    riesgo_promedio = resultado_inundacion['riesgo_promedio']
+    
+    if riesgo_promedio < 10:
+        st.success("""
+        **✅ Riesgo Bajo**: El área presenta bajo riesgo de inundación
+        - Monitoreo preventivo cada 2-3 años
+        - Mantenimiento básico de drenajes
+        - Cultivos sin restricciones especiales
+        """)
+    elif riesgo_promedio < 25:
+        st.warning("""
+        **⚠️ Riesgo Medio**: Requiere atención y medidas preventivas
+        - Monitoreo anual durante época de lluvias
+        - Mejoras en sistema de drenaje
+        - Considerar cultivos resistentes a encharcamiento
+        - Seguro agrícola recomendado
+        """)
+    elif riesgo_promedio < 50:
+        st.error("""
+        **🚨 Riesgo Alto**: Implementar medidas de mitigación urgentes
+        - Monitoreo continuo con sensores
+        - Infraestructura de drenaje robusta
+        - Cultivos adaptados a condiciones hídricas variables
+        - Seguro agrícola obligatorio
+        - Planes de contingencia para eventos extremos
+        """)
+    else:
+        st.error("""
+        **💀 Riesgo Muy Alto**: Área crítica - considerar cambio de uso
+        - Evaluación técnica especializada
+        - Posible no aptitud para agricultura tradicional
+        - Considerar actividades ganaderas o forestales
+        - Seguro agrícola con cobertura especial
+        - Monitoreo meteorológico avanzado
+        """)
+    
+    # DESCARGAS
+    st.markdown("---")
+    st.markdown("### 💾 Descargar Resultados")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if 'df_inundacion' in resultado_inundacion:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"analisis_inundacion_{timestamp}.csv"
+            csv_data = resultado_inundacion['df_inundacion'].to_csv(index=False)
+            
+            st.download_button(
+                label="📊 Descargar CSV - Análisis de Inundación",
+                data=csv_data,
+                file_name=filename,
+                mime="text/csv",
+                help="Datos detallados del análisis de riesgo hídrico"
+            )
+    
+    with col2:
+        # Crear resumen ejecutivo
+        resumen = f"""
+ANÁLISIS DE RIESGO HÍDRICO
+=========================
+
+Área Analizada: {resultado_inundacion['area_total_ha']:,.1f} ha
+Años Analizados: {resultado_inundacion['años_analizados']}
+Período: {config_analisis.get('anos_analisis', (2005, 2025))}
+
+MÉTRICAS DE RIESGO:
+- Riesgo Promedio: {resultado_inundacion['riesgo_promedio']:.1f}%
+- Riesgo Máximo: {resultado_inundacion['riesgo_maximo']:.1f}%
+- Categoría: {resultado_inundacion['categoria_riesgo']}
+- Probabilidad de Evento: {resultado_inundacion['probabilidad_evento']:.1f}%
+
+EVENTOS SIGNIFICATIVOS: {len(resultado_inundacion['eventos_significativos'])}
+
+Generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
+        
+        st.download_button(
+            label="📄 Descargar Reporte Ejecutivo",
+            data=resumen,
+            file_name=f"reporte_riesgo_hidrico_{timestamp}.txt",
+            mime="text/plain",
+            help="Resumen ejecutivo del análisis de riesgo hídrico"
+        )
+    
+    # Botón para limpiar resultados
+    st.markdown("---")
+    if st.button("🗑️ Limpiar Resultados", help="Borra los resultados para hacer un nuevo análisis", key="limpiar_inundacion"):
+        st.session_state.analisis_completado = False
+        st.session_state.resultados_analisis = None
 
 if __name__ == "__main__":
     main()
