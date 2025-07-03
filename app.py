@@ -868,6 +868,66 @@ def get_download_link(df, filename, link_text):
     href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">{link_text}</a>'
     return href
 
+def generar_kmz_desde_cuit(poligonos_data, nombre_archivo="campos"):
+    """Genera un archivo KMZ desde datos de polígonos de CUIT"""
+    try:
+        # Crear contenido KML
+        kml_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+  <name>Campos - {nombre_archivo}</name>
+  <Style id="campoStyle">
+    <LineStyle>
+      <color>ff0000ff</color>
+      <width>3</width>
+    </LineStyle>
+    <PolyStyle>
+      <color>7f0000ff</color>
+    </PolyStyle>
+  </Style>
+"""
+        
+        for i, campo in enumerate(poligonos_data):
+            coords = campo.get('coords', [])
+            if coords:
+                kml_content += f"""
+  <Placemark>
+    <name>Campo {i+1}: {campo.get('titular', 'Sin titular')}</name>
+    <description>
+      Localidad: {campo.get('localidad', 'Sin información')}
+      Superficie: {campo.get('superficie', 0):.1f} ha
+    </description>
+    <styleUrl>#campoStyle</styleUrl>
+    <Polygon>
+      <outerBoundaryIs>
+        <LinearRing>
+          <coordinates>
+"""
+                for coord in coords:
+                    kml_content += f"{coord[0]},{coord[1]},0\n"
+                
+                kml_content += """
+          </coordinates>
+        </LinearRing>
+      </outerBoundaryIs>
+    </Polygon>
+  </Placemark>
+"""
+        
+        kml_content += "</Document></kml>"
+        
+        # Crear KMZ (ZIP con el KML)
+        kmz_buffer = BytesIO()
+        with zipfile.ZipFile(kmz_buffer, 'w', zipfile.ZIP_DEFLATED) as kmz:
+            kmz.writestr("doc.kml", kml_content)
+        
+        kmz_buffer.seek(0)
+        return kmz_buffer
+        
+    except Exception as e:
+        st.error(f"Error generando KMZ: {e}")
+        return None
+
 
 def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_campana, campana_seleccionada):
     """
@@ -1797,13 +1857,13 @@ def main():
         st.error("❌ No se pudo conectar con Google Earth Engine. Verifica la configuración.")
         return
     
-    # CREAR PESTAÑAS
-    tab1, tab2 = st.tabs(["📁 Análisis desde KMZ", "🔍 Análisis por CUIT"])
+    # CREAR PESTAÑAS CON ESTADO PERSISTENTE
+    tabs = st.tabs(["📁 Análisis desde KMZ", "🔍 Análisis por CUIT"])
     
-    with tab1:
+    with tabs[0]:
         mostrar_analisis_kmz()
     
-    with tab2:
+    with tabs[1]:
         mostrar_analisis_cuit()
     
     # MOSTRAR RESULTADOS PERSISTENTES - FUERA DE LAS PESTAÑAS
@@ -1951,6 +2011,16 @@ def mostrar_analisis_cuit():
         horizontal=True
     ) == "Solo campos activos"
     
+    # NUEVA OPCIÓN: Análisis individual o general
+    st.markdown("---")
+    tipo_analisis = st.radio(
+        "¿Cómo querés analizar los cultivos?",
+        ["🌾 Análisis General (todos los campos juntos)", "🎯 Análisis Individual (campo por campo)"],
+        key="tipo_analisis_cuit",
+        horizontal=True,
+        help="General: Un solo análisis con todos los campos como AOI único. Individual: Análisis separado por cada campo."
+    )
+    
     if st.button("🚀 Analizar Cultivos por CUIT", type="primary", key="btn_analizar_cuit"):
         if cuit_input:
             try:
@@ -1974,58 +2044,147 @@ def mostrar_analisis_cuit():
                             **Superficie**: {campo.get('superficie', 0):.1f} ha
                             """)
                     
-                    # Crear AOI
-                    aoi = crear_ee_feature_collection_web(poligonos_data)
-                    if not aoi:
-                        st.error("❌ No se pudo crear el área de interés")
-                        return
-                    
-                    # Ejecutar análisis
-                    with st.spinner("🔄 Ejecutando análisis de cultivos..."):
-                        resultado = analizar_cultivos_web(aoi)
-                        
-                        if len(resultado) == 4:
-                            df_cultivos, area_total, tiles_urls, cultivos_por_campana = resultado
-                        else:
-                            df_cultivos, area_total = resultado[:2]
-                            tiles_urls = {}
-                            cultivos_por_campana = {}
-                        
-                        if df_cultivos is not None and not df_cultivos.empty:
-                            # GUARDAR TODO EN SESSION STATE
-                            st.session_state.resultados_analisis = {
-                                'df_cultivos': df_cultivos,
-                                'area_total': area_total,
-                                'tiles_urls': tiles_urls,
-                                'cultivos_por_campana': cultivos_por_campana,
-                                'aoi': aoi,
-                                'archivo_info': f"CUIT: {cuit_input} - {len(poligonos_data)} campos",
-                                'nombres_archivos': [f"CUIT_{normalizar_cuit(cuit_input).replace('-', '')}"],
-                                'fuente': 'CUIT',  # Identificar fuente
-                                'cuit_info': {
-                                    'cuit': cuit_input,
-                                    'campos_encontrados': len(poligonos_data),
-                                    'solo_activos': solo_activos
-                                }
-                            }
-                            st.session_state.analisis_completado = True
-                            st.success("🎉 ¡Análisis completado exitosamente!")
-                            # SIN RERUN para mantener la pestaña activa
-                            st.info("📋 Los resultados aparecerán abajo. Podés cambiar de pestaña para verlos en detalle.")
+                    # ANÁLISIS SEGÚN TIPO ELEGIDO
+                    if "Individual" in tipo_analisis:
+                        # 🎯 ANÁLISIS INDIVIDUAL POR CAMPO
+                        with st.spinner("🔄 Ejecutando análisis individual por campo..."):
+                            resultados_individuales = []
+                            campo_mas_grande = None
+                            max_superficie = 0
                             
-                            # Mostrar resumen rápido en la misma pestaña
-                            st.markdown("### 📊 Resumen Rápido")
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                st.metric("Área Total", f"{area_total:,.1f} ha")
-                            with col2:
-                                cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
-                                st.metric("Cultivos", f"{cultivos_detectados:,}")
-                            with col3:
-                                st.metric("Campos", f"{len(poligonos_data)} encontrados")
-                        else:
-                            st.error("❌ No se pudieron analizar los cultivos")
-                            st.session_state.analisis_completado = False
+                            for i, campo_data in enumerate(poligonos_data):
+                                st.write(f"🔄 Analizando Campo {i+1}: {campo_data.get('titular', 'Sin titular')}...")
+                                
+                                # Crear AOI individual para este campo
+                                aoi_individual = crear_ee_feature_collection_web([campo_data])
+                                
+                                if aoi_individual:
+                                    # Análisis individual
+                                    resultado = analizar_cultivos_web(aoi_individual)
+                                    
+                                    if len(resultado) >= 2:
+                                        df_cultivos_ind, area_total_ind = resultado[:2]
+                                        tiles_urls_ind = resultado[2] if len(resultado) > 2 else {}
+                                        cultivos_por_campana_ind = resultado[3] if len(resultado) > 3 else {}
+                                        
+                                        if df_cultivos_ind is not None and not df_cultivos_ind.empty:
+                                            # Agregar información del campo al dataframe
+                                            df_cultivos_ind['campo_nombre'] = campo_data.get('titular', f'Campo_{i+1}')
+                                            df_cultivos_ind['campo_numero'] = i + 1
+                                            df_cultivos_ind['campo_localidad'] = campo_data.get('localidad', 'Sin información')
+                                            df_cultivos_ind['campo_superficie_total'] = campo_data.get('superficie', 0)
+                                            
+                                            resultado_campo = {
+                                                'campo_numero': i + 1,
+                                                'campo_nombre': campo_data.get('titular', f'Campo_{i+1}'),
+                                                'campo_localidad': campo_data.get('localidad', 'Sin información'),
+                                                'campo_superficie': campo_data.get('superficie', 0),
+                                                'df_cultivos': df_cultivos_ind,
+                                                'area_total': area_total_ind,
+                                                'tiles_urls': tiles_urls_ind,
+                                                'cultivos_por_campana': cultivos_por_campana_ind,
+                                                'aoi': aoi_individual,
+                                                'coords': campo_data.get('coords', [])
+                                            }
+                                            resultados_individuales.append(resultado_campo)
+                                            
+                                            # Encontrar campo más grande
+                                            if campo_data.get('superficie', 0) > max_superficie:
+                                                max_superficie = campo_data.get('superficie', 0)
+                                                campo_mas_grande = resultado_campo
+                            
+                            if resultados_individuales:
+                                # GUARDAR RESULTADOS INDIVIDUALES EN SESSION STATE
+                                st.session_state.resultados_analisis = {
+                                    'tipo': 'individual',
+                                    'resultados_individuales': resultados_individuales,
+                                    'campo_principal': campo_mas_grande,
+                                    'total_campos': len(resultados_individuales),
+                                    'superficie_total': sum(r['campo_superficie'] for r in resultados_individuales),
+                                    'fuente': 'CUIT_INDIVIDUAL',
+                                    'cuit_info': {
+                                        'cuit': cuit_input,
+                                        'campos_encontrados': len(poligonos_data),
+                                        'solo_activos': solo_activos
+                                    },
+                                    'nombres_archivos': [f"CUIT_{normalizar_cuit(cuit_input).replace('-', '')}_individual"]
+                                }
+                                st.session_state.analisis_completado = True
+                                st.success("🎉 ¡Análisis individual completado exitosamente!")
+                                st.info("📋 Los resultados de cada campo aparecerán abajo.")
+                                
+                                # Mostrar resumen rápido
+                                st.markdown("### 📊 Resumen por Campo")
+                                for resultado in resultados_individuales:
+                                    with st.expander(f"🏡 {resultado['campo_nombre']} - {resultado['campo_superficie']:.1f} ha", expanded=False):
+                                        col1, col2, col3 = st.columns(3)
+                                        with col1:
+                                            st.metric("Área Total", f"{resultado['area_total']:,.1f} ha")
+                                        with col2:
+                                            cultivos_detectados = resultado['df_cultivos'][resultado['df_cultivos']['Área (ha)'] > 0]['Cultivo'].nunique()
+                                            st.metric("Cultivos", f"{cultivos_detectados:,}")
+                                        with col3:
+                                            st.metric("Localidad", resultado['campo_localidad'])
+                            else:
+                                st.error("❌ No se pudieron analizar los campos individualmente")
+                                st.session_state.analisis_completado = False
+                    
+                    else:
+                        # 🌾 ANÁLISIS GENERAL (ORIGINAL)
+                        # Crear AOI
+                        aoi = crear_ee_feature_collection_web(poligonos_data)
+                        if not aoi:
+                            st.error("❌ No se pudo crear el área de interés")
+                            return
+                        
+                        # Ejecutar análisis
+                        with st.spinner("🔄 Ejecutando análisis general de cultivos..."):
+                            resultado = analizar_cultivos_web(aoi)
+                            
+                            if len(resultado) == 4:
+                                df_cultivos, area_total, tiles_urls, cultivos_por_campana = resultado
+                            else:
+                                df_cultivos, area_total = resultado[:2]
+                                tiles_urls = {}
+                                cultivos_por_campana = {}
+                            
+                            if df_cultivos is not None and not df_cultivos.empty:
+                                # GUARDAR TODO EN SESSION STATE
+                                st.session_state.resultados_analisis = {
+                                    'tipo': 'general',
+                                    'df_cultivos': df_cultivos,
+                                    'area_total': area_total,
+                                    'tiles_urls': tiles_urls,
+                                    'cultivos_por_campana': cultivos_por_campana,
+                                    'aoi': aoi,
+                                    'archivo_info': f"CUIT: {cuit_input} - {len(poligonos_data)} campos",
+                                    'nombres_archivos': [f"CUIT_{normalizar_cuit(cuit_input).replace('-', '')}"],
+                                    'fuente': 'CUIT',  # Identificar fuente
+                                    'cuit_info': {
+                                        'cuit': cuit_input,
+                                        'campos_encontrados': len(poligonos_data),
+                                        'solo_activos': solo_activos
+                                    },
+                                    'poligonos_data': poligonos_data  # Para generar KMZ
+                                }
+                                st.session_state.analisis_completado = True
+                                st.success("🎉 ¡Análisis completado exitosamente!")
+                                # SIN RERUN para mantener la pestaña activa
+                                st.info("📋 Los resultados aparecerán abajo. Podés cambiar de pestaña para verlos en detalle.")
+                                
+                                # Mostrar resumen rápido en la misma pestaña
+                                st.markdown("### 📊 Resumen Rápido")
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("Área Total", f"{area_total:,.1f} ha")
+                                with col2:
+                                    cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
+                                    st.metric("Cultivos", f"{cultivos_detectados:,}")
+                                with col3:
+                                    st.metric("Campos", f"{len(poligonos_data)} encontrados")
+                            else:
+                                st.error("❌ No se pudieron analizar los cultivos")
+                                st.session_state.analisis_completado = False
                             
             except ValueError as e:
                 st.error("❌ CUIT inválido. Verificá el formato (XX-XXXXXXXX-X)")
@@ -2041,25 +2200,89 @@ def mostrar_resultados_analisis():
     
     # Extraer datos de session state
     datos = st.session_state.resultados_analisis
-    df_cultivos = datos['df_cultivos']
-    area_total = datos['area_total']
-    tiles_urls = datos['tiles_urls']
-    cultivos_por_campana = datos['cultivos_por_campana']
-    aoi = datos['aoi']
+    tipo_analisis = datos.get('tipo', 'general')
     fuente = datos.get('fuente', 'Desconocida')
     
-    # Mostrar información de la fuente
-    if fuente == 'CUIT':
+    # ANÁLISIS INDIVIDUAL POR CAMPO
+    if tipo_analisis == 'individual':
+        resultados_individuales = datos['resultados_individuales']
+        campo_principal = datos.get('campo_principal')
+        
+        # Mostrar información de la fuente
         cuit_info = datos.get('cuit_info', {})
-        st.info(f"📋 **Fuente**: CUIT {cuit_info.get('cuit', 'N/A')} - {cuit_info.get('campos_encontrados', 0)} campos encontrados")
+        st.info(f"📋 **Análisis Individual**: CUIT {cuit_info.get('cuit', 'N/A')} - {datos['total_campos']} campos analizados")
+        
+        # Métricas generales
+        st.markdown('<div class="metric-container">', unsafe_allow_html=True)
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Campos Analizados", f"{datos['total_campos']:,}")
+        with col2:
+            st.metric("Superficie Total", f"{datos['superficie_total']:,.1f} ha")
+        with col3:
+            if campo_principal:
+                st.metric("Campo Más Grande", f"{campo_principal['campo_superficie']:,.1f} ha")
+            else:
+                st.metric("Campo Más Grande", "N/A")
+        with col4:
+            superficie_promedio = datos['superficie_total'] / datos['total_campos'] if datos['total_campos'] > 0 else 0
+            st.metric("Superficie Promedio", f"{superficie_promedio:,.1f} ha")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # SELECTOR DE CAMPO INDIVIDUAL
+        st.subheader("🎯 Seleccionar Campo para Análisis Detallado")
+        
+        # Crear opciones para el selectbox
+        opciones_campos = [f"🏡 Campo {r['campo_numero']}: {r['campo_nombre']} ({r['campo_superficie']:.1f} ha)" 
+                          for r in resultados_individuales]
+        
+        # Si hay campo principal, ponerlo como default
+        default_index = 0
+        if campo_principal:
+            for i, r in enumerate(resultados_individuales):
+                if r['campo_numero'] == campo_principal['campo_numero']:
+                    default_index = i
+                    break
+        
+        campo_seleccionado_idx = st.selectbox(
+            "Elegir campo:",
+            range(len(opciones_campos)),
+            format_func=lambda x: opciones_campos[x],
+            index=default_index,
+            key="selector_campo_individual"
+        )
+        
+        # Obtener datos del campo seleccionado
+        resultado_campo = resultados_individuales[campo_seleccionado_idx]
+        df_cultivos = resultado_campo['df_cultivos']
+        area_total = resultado_campo['area_total']
+        tiles_urls = resultado_campo['tiles_urls']
+        cultivos_por_campana = resultado_campo['cultivos_por_campana']
+        aoi = resultado_campo['aoi']
+        
+        # Mostrar info del campo seleccionado
+        st.info(f"📍 **Campo**: {resultado_campo['campo_nombre']} | **Localidad**: {resultado_campo['campo_localidad']} | **Superficie**: {resultado_campo['campo_superficie']:.1f} ha")
+        
+    # ANÁLISIS GENERAL (ORIGINAL)
     else:
-        st.info(f"📋 **Fuente**: {datos.get('archivo_info', 'Archivos KMZ')}")
+        df_cultivos = datos['df_cultivos']
+        area_total = datos['area_total']
+        tiles_urls = datos['tiles_urls']
+        cultivos_por_campana = datos['cultivos_por_campana']
+        aoi = datos['aoi']
+        
+        # Mostrar información de la fuente
+        if fuente == 'CUIT':
+            cuit_info = datos.get('cuit_info', {})
+            st.info(f"📋 **Análisis General**: CUIT {cuit_info.get('cuit', 'N/A')} - {cuit_info.get('campos_encontrados', 0)} campos unidos")
+        else:
+            st.info(f"📋 **Fuente**: {datos.get('archivo_info', 'Archivos KMZ')}")
     
-    # Métricas principales - Responsive CON FORMATO DE NÚMEROS
+    # MÉTRICAS DEL ANÁLISIS SELECCIONADO
     st.markdown('<div class="metric-container">', unsafe_allow_html=True)
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Área Total", f"{area_total:,.1f} ha")
+        st.metric("Área Analizada", f"{area_total:,.1f} ha")
     with col2:
         cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
         st.metric("Cultivos Detectados", f"{cultivos_detectados:,}")
@@ -2147,10 +2370,10 @@ def mostrar_resultados_analisis():
         st.error(f"Error generando el mapa: {e}")
         st.info("El análisis se completó correctamente, pero no se pudo mostrar el mapa con tiles.")
     
-    # DESCARGAS LIMPIAS Y CLARAS con nombre del archivo
+    # DESCARGAS MEJORADAS CON KMZ PARA CUIT
     st.markdown("---")
     st.subheader("💾 Descargar Resultados")
-    st.write("Descarga los resultados del análisis en formato CSV:")
+    st.write("Descarga los resultados del análisis en diferentes formatos:")
     
     # Crear nombre base para archivos
     nombres_archivos = datos.get('nombres_archivos', ['analisis'])
@@ -2159,20 +2382,53 @@ def mostrar_resultados_analisis():
     if len(nombre_base) > 50:
         nombre_base = nombre_base[:50]
     
-    col1, col2 = st.columns(2)
+    # CSVs
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename_hectareas = f"{nombre_base}_hectareas_{timestamp}.csv"
-        download_link_hectareas = get_download_link(df_cultivos, filename_hectareas, "📊 Descargar CSV - Hectáreas por Cultivo")
+        download_link_hectareas = get_download_link(df_cultivos, filename_hectareas, "📊 CSV - Hectáreas")
         st.markdown(download_link_hectareas, unsafe_allow_html=True)
-        st.caption("📄 Contiene: Cultivo, Campaña, Área en hectáreas")
+        st.caption("📄 Cultivo, Campaña, Área")
     
     with col2:
         filename_porcentajes = f"{nombre_base}_porcentajes_{timestamp}.csv"
-        download_link_porcentajes = get_download_link(df_display, filename_porcentajes, "🔄 Descargar CSV - Porcentajes de Rotación")
+        download_link_porcentajes = get_download_link(df_display, filename_porcentajes, "🔄 CSV - Rotación")
         st.markdown(download_link_porcentajes, unsafe_allow_html=True)
-        st.caption("📄 Contiene: Rotación en porcentajes por campaña")
+        st.caption("📄 Porcentajes por campaña")
+    
+    # KMZ para análisis por CUIT
+    with col3:
+        if fuente in ['CUIT', 'CUIT_INDIVIDUAL'] and 'poligonos_data' in datos:
+            filename_kmz = f"{nombre_base}_campos_{timestamp}.kmz"
+            kmz_buffer = generar_kmz_desde_cuit(datos['poligonos_data'], nombre_base)
+            if kmz_buffer:
+                st.download_button(
+                    label="🗺️ KMZ - Campos",
+                    data=kmz_buffer,
+                    file_name=filename_kmz,
+                    mime="application/vnd.google-earth.kmz"
+                )
+                st.caption("📄 Coordenadas de campos")
+        elif tipo_analisis == 'individual':
+            # Para análisis individual, generar KMZ del campo actual
+            filename_kmz = f"{nombre_base}_campo_{resultado_campo['campo_numero']}_{timestamp}.kmz"
+            campo_individual = [resultado_campo]  # Convertir a lista
+            kmz_buffer = generar_kmz_desde_cuit([{
+                'coords': resultado_campo['coords'],
+                'titular': resultado_campo['campo_nombre'],
+                'localidad': resultado_campo['campo_localidad'],
+                'superficie': resultado_campo['campo_superficie']
+            }], f"campo_{resultado_campo['campo_numero']}")
+            if kmz_buffer:
+                st.download_button(
+                    label="🏡 KMZ - Campo",
+                    data=kmz_buffer,
+                    file_name=filename_kmz,
+                    mime="application/vnd.google-earth.kmz"
+                )
+                st.caption("📄 Campo seleccionado")
     
     # RESUMEN FINAL PERSISTENTE
     st.subheader("📈 Resumen por Campaña")
@@ -2195,7 +2451,7 @@ def mostrar_resultados_analisis():
     if st.button("🗑️ Limpiar Resultados", help="Borra los resultados para hacer un nuevo análisis"):
         st.session_state.analisis_completado = False
         st.session_state.resultados_analisis = None
-        st.rerun()
+        # NO usar st.rerun() para evitar salto de pestañas
 
 if __name__ == "__main__":
     main()
