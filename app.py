@@ -382,7 +382,6 @@ def analizar_cultivos_web(aoi):
                     # 🔧 MÉTODO PRINCIPAL NO APLICA COLORES CORRECTAMENTE
                     # Aunque "funciona", los colores son incorrectos
                     raise Exception("🎯 FORZANDO método RGB que genera colores EXACTOS")
-                        
                 except Exception as e:
                     # 🎨 MÉTODO RGB PARA COLORES EXACTOS
                     try:
@@ -917,34 +916,76 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         except Exception as e:
             pass  # Si falla, continuar sin tiles
     
-    # 🔥 CONTORNO MEGA VISIBLE - MÉTODO SIMPLE Y DIRECTO
+    # 🔥 CONTORNO SÚPER VISIBLE - MÚLTIPLES MÉTODOS PARA ASEGURAR VISIBILIDAD
     try:
         aoi_geojson = aoi.getInfo()
         if aoi_geojson and 'features' in aoi_geojson:
-            # SOLO UNA LÍNEA SÚPER GRUESA Y BRILLANTE
-            contorno_campo = folium.GeoJson(
+            # MÉTODO 1: Contorno grueso rojo con fondo amarillo
+            contorno_principal = folium.GeoJson(
                 aoi_geojson,
                 name="🔥 LÍMITE DEL CAMPO",
                 style_function=lambda feature: {
-                    "fillColor": "yellow",
-                    "color": "red", 
-                    "weight": 10,
-                    "fillOpacity": 0.1,
-                    "opacity": 1.0,
-                    "dashArray": "10, 10"
+                    "fillColor": "#FFFF00",      # Amarillo brillante
+                    "color": "#FF0000",          # Rojo brillante
+                    "weight": 8,                 # Línea gruesa
+                    "fillOpacity": 0.15,         # Fondo semi-transparente
+                    "opacity": 1.0,              # Línea completamente opaca
+                    "dashArray": "15, 10"        # Línea punteada muy visible
                 },
-                tooltip="LÍMITE DEL ÁREA ANALIZADA",
-                popup="CAMPO ANALIZADO"
+                tooltip="🔥 LÍMITE DEL ÁREA ANALIZADA",
+                popup="🌾 CAMPO ANALIZADO"
             )
-            contorno_campo.add_to(m)
+            contorno_principal.add_to(m)
             
-            # DEBUG: Imprimir info para verificar
-            print(f"✅ Contorno agregado: {len(aoi_geojson['features'])} features")
+            # MÉTODO 2: Contorno blanco debajo para mayor contraste
+            contorno_fondo = folium.GeoJson(
+                aoi_geojson,
+                name="",  # Sin nombre para que no aparezca en la leyenda
+                style_function=lambda feature: {
+                    "fillColor": "transparent",
+                    "color": "#FFFFFF",          # Blanco de fondo
+                    "weight": 12,                # Más grueso que el principal
+                    "fillOpacity": 0,
+                    "opacity": 0.8,
+                    "dashArray": "15, 10"
+                }
+            )
+            contorno_fondo.add_to(m)
+            
+            # MÉTODO 3: Marcadores en las esquinas para extra visibilidad
+            for i, feature in enumerate(aoi_geojson['features']):
+                if 'geometry' in feature and 'coordinates' in feature['geometry']:
+                    coords = feature['geometry']['coordinates'][0]
+                    if len(coords) > 3:  # Asegurar que hay suficientes puntos
+                        # Agregar marcadores en las 4 esquinas del polígono
+                        corner_indices = [0, len(coords)//4, len(coords)//2, 3*len(coords)//4]
+                        for idx in corner_indices[:4]:  # Solo 4 esquinas
+                            if idx < len(coords):
+                                lon, lat = coords[idx][0], coords[idx][1]
+                                folium.CircleMarker(
+                                    location=[lat, lon],
+                                    radius=8,
+                                    popup=f"🔴 Esquina del Campo",
+                                    color="red",
+                                    fillColor="yellow",
+                                    fillOpacity=1.0,
+                                    weight=3
+                                ).add_to(m)
+            
+            print(f"✅ Contorno MEJORADO agregado: {len(aoi_geojson['features'])} features con múltiples métodos")
         else:
             print("❌ No se pudo obtener AOI geojson o no tiene features")
     except Exception as e:
-        print(f"❌ Error agregando contorno: {e}")
-        pass
+        print(f"❌ Error agregando contorno mejorado: {e}")
+        # Fallback: método simple
+        try:
+            simple_style = {"color": "red", "weight": 10, "opacity": 1.0}
+            aoi_simple = aoi.getInfo()
+            if aoi_simple:
+                folium.GeoJson(aoi_simple, style_function=lambda x: simple_style).add_to(m)
+                print("✅ Fallback: Contorno simple agregado")
+        except:
+            pass
     
     # Crear leyenda con información de cultivos
     legend_added = False
@@ -1329,11 +1370,11 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
         if aoi_geojson and 'features' in aoi_geojson:
             # SOLO UNA LÍNEA SÚPER GRUESA Y BRILLANTE
             contorno_campo = folium.GeoJson(
-                aoi_geojson,
+            aoi_geojson,
                 name="🔥 LÍMITE DEL CAMPO",
                 style_function=lambda feature: {
                     "fillColor": "yellow",
-                    "color": "red", 
+                "color": "red",
                     "weight": 10,
                     "fillOpacity": 0.1,
                     "opacity": 1.0,
@@ -1390,15 +1431,48 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
     return m
 
 def main():
-    # 🎨 LOGO VISU SÚPER SIMPLE QUE FUNCIONA
-    st.markdown("")
-    st.markdown("# 🎯 V  I  S  U")
-    st.markdown("### ✨ VISUALIZE WITH SUPERPOWERS")
-    st.markdown("## 🌾 Análisis de Rotación de Cultivos")
-    st.markdown("📄 *Sube tus archivos KMZ y obtén análisis detallado*")
+    # 🎯 LOGO VISU MEJORADO Y MÁS VISUAL
+    st.markdown("""
+    <div style="text-align: center; padding: 20px; margin-bottom: 30px; 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 15px; box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+                color: white; border: 3px solid #fff;">
+        <h1 style="font-size: 3rem; margin: 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); 
+                   font-weight: bold; letter-spacing: 8px;">
+            🎯 V I S U
+        </h1>
+        <h2 style="font-size: 1.2rem; margin: 10px 0; opacity: 0.9; 
+                   text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">
+            ✨ VISUALIZE WITH SUPERPOWERS ✨
+        </h2>
+        <h3 style="font-size: 1.8rem; margin: 10px 0; color: #FFD700; 
+                   text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">
+            🌾 Análisis de Rotación de Cultivos
+        </h3>
+        <p style="font-size: 1rem; margin: 0; opacity: 0.8;">
+            📄 Sube tus archivos KMZ y obtén análisis detallado
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # ⚠️ AVISO IMPORTANTE SOBRE MÓVILES
+    st.markdown("""
+    <div style="background-color: #fff3cd; border-left: 5px solid #ffc107; 
+                padding: 15px; margin: 20px 0; border-radius: 8px;">
+        <h4 style="color: #856404; margin: 0 0 10px 0;">
+            📱 <strong>IMPORTANTE: Uso en Dispositivos Móviles</strong>
+        </h4>
+        <p style="color: #856404; margin: 0; line-height: 1.4;">
+            <strong>⚠️ Limitación conocida:</strong> Los archivos KMZ pueden no subir correctamente en navegadores móviles (iPhone, Android).<br>
+            <strong>💡 Solución recomendada:</strong> Usa una computadora de escritorio o laptop para mejores resultados.<br>
+            <strong>🔄 Alternativa:</strong> Si solo tienes móvil, prueba con diferentes navegadores (Chrome, Firefox, Safari).
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     st.markdown("---")
     
-    # CSS Responsive para móviles
+    # CSS Responsive para móviles CON MEJORAS PARA UPLOAD
     st.markdown("""
     <style>
     /* Responsive design para móviles */
@@ -1425,6 +1499,21 @@ def main():
             width: 100% !important;
             padding: 0.75rem !important;
             font-size: 16px !important;
+        }
+        
+        /* MEJORAR FILE UPLOADER EN MÓVIL */
+        [data-testid="stFileUploader"] {
+            background-color: #f0f8ff !important;
+            border: 3px dashed #0066cc !important;
+            border-radius: 15px !important;
+            padding: 20px !important;
+            text-align: center !important;
+        }
+        
+        [data-testid="stFileUploader"] label {
+            font-size: 18px !important;
+            font-weight: bold !important;
+            color: #0066cc !important;
         }
         
         /* Mejorar tablas en móvil */
@@ -1464,6 +1553,29 @@ def main():
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
+    /* MEJORAR FILE UPLOADER EN GENERAL */
+    [data-testid="stFileUploader"] {
+        background: linear-gradient(135deg, #f0f8ff, #e6f3ff) !important;
+        border: 3px dashed #0066cc !important;
+        border-radius: 15px !important;
+        padding: 25px !important;
+        text-align: center !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    [data-testid="stFileUploader"]:hover {
+        background: linear-gradient(135deg, #e6f3ff, #cce7ff) !important;
+        border-color: #0052cc !important;
+        transform: scale(1.02) !important;
+    }
+    
+    [data-testid="stFileUploader"] label {
+        font-size: 20px !important;
+        font-weight: bold !important;
+        color: #0066cc !important;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.1) !important;
+    }
+    
     /* Centrar contenido en móviles */
     @media (max-width: 480px) {
         h1, h2, h3 {
@@ -1495,20 +1607,34 @@ def main():
     
     st.success("✅ Google Earth Engine conectado correctamente")
     
-    # Área de upload limpia sin títulos duplicados
+    # Área de upload MEJORADA con mejor diseño
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #f0f8ff, #e6f3ff); 
+                padding: 25px; border-radius: 15px; margin: 20px 0; 
+                border: 2px solid #0066cc; text-align: center;">
+        <h3 style="color: #0066cc; margin: 0 0 15px 0;">
+            📁 Carga de Archivos KMZ
+        </h3>
+        <p style="color: #004499; margin: 0;">
+            Selecciona uno o más archivos KMZ para analizar cultivos y rotación
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     uploaded_files = st.file_uploader(
-        "📁 Selecciona uno o más archivos KMZ",
+        "🌾 Selecciona tus archivos KMZ",
         type=['kmz'],
         accept_multiple_files=True,
-        help="Puedes subir múltiples archivos KMZ para analizar cultivos y rotación"
+        help="💡 Puedes subir múltiples archivos KMZ para analizar cultivos y rotación. ⚠️ En móviles puede no funcionar - usa computadora para mejores resultados."
     )
     
     if uploaded_files:
-        st.success(f"✅ {len(uploaded_files)} archivo(s) subido(s)")
+        st.success(f"✅ {len(uploaded_files)} archivo(s) subido(s) correctamente")
         
-        with st.expander("Ver detalles de archivos subidos"):
+        with st.expander("📋 Ver detalles de archivos subidos"):
             for file in uploaded_files:
-                st.write(f"📄 {file.name} ({file.size:,} bytes)")
+                file_size_mb = file.size / (1024 * 1024)
+                st.write(f"📄 **{file.name}** - {file_size_mb:.2f} MB ({file.size:,} bytes)")
         
         # BOTÓN DE ANÁLISIS - SOLO PROCESA Y GUARDA EN SESSION STATE
         if st.button("🚀 Analizar Cultivos y Rotación", type="primary"):
@@ -1582,33 +1708,33 @@ def main():
         
         # Métricas principales - Responsive CON FORMATO DE NÚMEROS
         st.markdown('<div class="metric-container">', unsafe_allow_html=True)
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
             st.metric("Área Total", f"{area_total:,.1f} ha")
-        with col2:
-            cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
+                    with col2:
+                        cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
             st.metric("Cultivos Detectados", f"{cultivos_detectados:,}")
-        with col3:
-            area_agricola_por_campana = df_cultivos[~df_cultivos['Cultivo'].str.contains('No agrícola', na=False)].groupby('Campaña')['Área (ha)'].sum()
-            area_agricola = area_agricola_por_campana.mean()
+                    with col3:
+                        area_agricola_por_campana = df_cultivos[~df_cultivos['Cultivo'].str.contains('No agrícola', na=False)].groupby('Campaña')['Área (ha)'].sum()
+                        area_agricola = area_agricola_por_campana.mean()
             st.metric("Área Agrícola", f"{area_agricola:,.1f} ha", help="Promedio de área agrícola por campaña")
-        with col4:
-            porcentaje_agricola = (area_agricola / area_total * 100) if area_total > 0 else 0
-            st.metric("% Agrícola", f"{porcentaje_agricola:.1f}%", help="Porcentaje promedio de área agrícola")
+                    with col4:
+                        porcentaje_agricola = (area_agricola / area_total * 100) if area_total > 0 else 0
+                        st.metric("% Agrícola", f"{porcentaje_agricola:.1f}%", help="Porcentaje promedio de área agrícola")
         st.markdown('</div>', unsafe_allow_html=True)
-        
+                    
         # Generar gráfico de rotación
-        fig, df_rotacion = generar_grafico_rotacion_web(df_cultivos)
-        
-        if fig is not None:
-            st.subheader("🎨 Gráfico de Rotación de Cultivos")
-            st.pyplot(fig)
-            
-            st.subheader("📋 Tabla de Rotación (%)")
-            df_display = df_rotacion.copy()
-            df_display = df_display.rename(columns={'Cultivo_Estandarizado': 'Cultivo'})
-            st.dataframe(df_display, use_container_width=True)
-            
+                    fig, df_rotacion = generar_grafico_rotacion_web(df_cultivos)
+                    
+                    if fig is not None:
+                        st.subheader("🎨 Gráfico de Rotación de Cultivos")
+                        st.pyplot(fig)
+                        
+                        st.subheader("📋 Tabla de Rotación (%)")
+                        df_display = df_rotacion.copy()
+                        df_display = df_display.rename(columns={'Cultivo_Estandarizado': 'Cultivo'})
+                        st.dataframe(df_display, use_container_width=True)
+                        
             # MAPA INTERACTIVO PERSISTENTE
             st.subheader("🗺️ Mapa Interactivo de Cultivos")
             st.write("Explora los píxeles de cultivos reales de Google Earth Engine:")
@@ -1690,14 +1816,14 @@ def main():
                     # Fallback al visor anterior
                     mapa_cultivos = crear_visor_cultivos_interactivo(aoi, df_cultivos)
                     map_data = st_folium(mapa_cultivos, width=None, height=500, key="mapa_fallback")
-                
-            except Exception as e:
+                            
+                        except Exception as e:
                 st.error(f"Error generando el mapa: {e}")
                 st.info("El análisis se completó correctamente, pero no se pudo mostrar el mapa con tiles.")
             
             # DESCARGAS LIMPIAS Y CLARAS con nombre del archivo
             st.markdown("---")
-            st.subheader("💾 Descargar Resultados")
+                        st.subheader("💾 Descargar Resultados")
             st.write("Descarga los resultados del análisis en formato CSV:")
             
             # Crear nombre base para archivos usando el nombre del KMZ
@@ -1708,33 +1834,33 @@ def main():
                 nombre_base = nombre_base[:50]
             
             col1, col2 = st.columns(2)
-            
-            with col1:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        
+                        with col1:
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename_hectareas = f"{nombre_base}_hectareas_{timestamp}.csv"
                 download_link_hectareas = get_download_link(df_cultivos, filename_hectareas, "📊 Descargar CSV - Hectáreas por Cultivo")
                 st.markdown(download_link_hectareas, unsafe_allow_html=True)
                 st.caption("📄 Contiene: Cultivo, Campaña, Área en hectáreas")
-            
-            with col2:
+                        
+                        with col2:
                 filename_porcentajes = f"{nombre_base}_porcentajes_{timestamp}.csv"
                 download_link_porcentajes = get_download_link(df_display, filename_porcentajes, "🔄 Descargar CSV - Porcentajes de Rotación")
                 st.markdown(download_link_porcentajes, unsafe_allow_html=True)
                 st.caption("📄 Contiene: Rotación en porcentajes por campaña")
             
             # RESUMEN FINAL PERSISTENTE
-            st.subheader("📈 Resumen por Campaña")
-            pivot_summary = df_cultivos.pivot_table(
-                index='Cultivo', 
-                columns='Campaña', 
-                values='Área (ha)', 
-                aggfunc='sum', 
-                fill_value=0
-            )
+                        st.subheader("📈 Resumen por Campaña")
+                        pivot_summary = df_cultivos.pivot_table(
+                            index='Cultivo', 
+                            columns='Campaña', 
+                            values='Área (ha)', 
+                            aggfunc='sum', 
+                            fill_value=0
+                        )
             pivot_summary['Promedio'] = pivot_summary.mean(axis=1).round(1)
             pivot_filtered = pivot_summary[pivot_summary['Promedio'] > 0].sort_values('Promedio', ascending=False)
-            st.dataframe(pivot_filtered, use_container_width=True)
-            
+                        st.dataframe(pivot_filtered, use_container_width=True)
+                        
             # Mensaje final
             st.markdown("---")
             st.success("✅ **Todos los resultados están listos y disponibles para descarga**")
