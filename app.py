@@ -1068,141 +1068,7 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         except Exception as e:
             pass  # Si falla, continuar sin tiles
     
-    # 🔥 CONTORNO SÚPER VISIBLE - MÉTODO MEJORADO EXTREMO
-    try:
-        aoi_geojson = aoi.getInfo()
-        
-        if aoi_geojson:
-            # MÉTODO 1: LÍNEA SÚPER GRUESA CON MÚLTIPLES CAPAS
-            
-            # Capa 1: Sombra negra (base)
-            contorno_sombra = folium.GeoJson(
-                aoi_geojson,
-                name="",  # Sin nombre para que no aparezca en leyenda
-                style_function=lambda feature: {
-                    "fillColor": "transparent",
-                    "color": "#000000",        # Negro
-                    "weight": 25,              # Súper grueso
-                    "fillOpacity": 0,
-                    "opacity": 0.8
-                }
-            )
-            contorno_sombra.add_to(m)
-            
-            # Capa 2: Línea blanca (contraste)
-            contorno_blanco = folium.GeoJson(
-                aoi_geojson,
-                name="",  # Sin nombre
-                style_function=lambda feature: {
-                    "fillColor": "transparent",
-                    "color": "#FFFFFF",        # Blanco brillante
-                    "weight": 20,              # Grueso
-                    "fillOpacity": 0,
-                    "opacity": 1.0
-                }
-            )
-            contorno_blanco.add_to(m)
-            
-            # Capa 3: Línea amarilla neón (máximo contraste)
-            contorno_amarillo = folium.GeoJson(
-                aoi_geojson,
-                name="",  # Sin nombre
-                style_function=lambda feature: {
-                    "fillColor": "transparent",
-                    "color": "#FFFF00",        # Amarillo neón
-                    "weight": 15,              # Grueso
-                    "fillOpacity": 0,
-                    "opacity": 1.0
-                }
-            )
-            contorno_amarillo.add_to(m)
-            
-            # Capa 4: Línea roja final (núcleo)
-            contorno_final = folium.GeoJson(
-                aoi_geojson,
-                name="🔥 LÍMITE DEL CAMPO",  # Solo este aparece en leyenda
-                style_function=lambda feature: {
-                    "fillColor": "#FF00FF",    # Magenta brillante para el relleno
-                    "color": "#FF0000",        # Rojo brillante
-                    "weight": 10,              # Grueso
-                    "fillOpacity": 0.15,       # Relleno semi-transparente
-                    "opacity": 1.0,            # Línea completamente opaca
-                    "dashArray": "20, 10"      # Punteado muy visible
-                },
-                tooltip="🔥 LÍMITE DEL ÁREA ANALIZADA",
-                popup="🌾 CAMPO ANALIZADO"
-            )
-            contorno_final.add_to(m)
-            
-            # MÉTODO 2: MARCADORES BRILLANTES EN TODAS LAS ESQUINAS
-            try:
-                if 'features' in aoi_geojson:
-                    for feature in aoi_geojson['features']:
-                        if 'geometry' in feature and 'coordinates' in feature['geometry']:
-                            coords = feature['geometry']['coordinates'][0]
-                            # Agregar marcadores súper brillantes en TODAS las esquinas
-                            for i, coord in enumerate(coords[::max(1, len(coords)//8)]):  # Cada 8vo punto o todos
-                                folium.CircleMarker(
-                                    location=[coord[1], coord[0]],  # lat, lon
-                                    radius=20,
-                                    popup=f"🔴 ESQUINA DEL CAMPO {i+1}",
-                                    color="#FF0000",     # Rojo brillante
-                                    fillColor="#FFFF00", # Amarillo brillante
-                                    fillOpacity=1.0,
-                                    weight=6,
-                                    opacity=1.0
-                                ).add_to(m)
-                                
-                                # Marcador adicional más pequeño encima
-                                folium.CircleMarker(
-                                    location=[coord[1], coord[0]],
-                                    radius=8,
-                                    popup=f"🟡 PUNTO {i+1}",
-                                    color="#000000",     # Negro
-                                    fillColor="#FF00FF", # Magenta
-                                    fillOpacity=1.0,
-                                    weight=2
-                                ).add_to(m)
-            except:
-                pass
-                
-    except Exception as e:
-        # Si falla, método de emergencia con bounds
-        try:
-            bounds = aoi.geometry().bounds()
-            bounds_info = bounds.getInfo()
-            
-            if bounds_info and 'coordinates' in bounds_info:
-                coords = bounds_info['coordinates'][0]
-                
-                # Crear contorno de emergencia súper visible
-                simple_geojson = {
-                    "type": "FeatureCollection",
-                    "features": [{
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Polygon",
-                            "coordinates": [coords]
-                        }
-                    }]
-                }
-                
-                contorno_emergencia = folium.GeoJson(
-                    simple_geojson,
-                    name="🔥 LÍMITE EMERGENCIA",
-                    style_function=lambda x: {
-                        "fillColor": "#FF00FF",
-                        "color": "#FF0000", 
-                        "weight": 30,          # Súper grueso
-                        "fillOpacity": 0.5,    # Muy visible
-                        "opacity": 1.0,
-                        "dashArray": "30, 15"  # Punteado súper visible
-                    }
-                )
-                contorno_emergencia.add_to(m)
-                
-        except Exception as e2:
-            pass  # Si todo falla, continuar sin contorno
+    # 🔥 CONTORNO ELIMINADO TEMPORALMENTE - SE AGREGA AL FINAL DEL MAPA
     
     # Crear leyenda con información de cultivos
     legend_added = False
@@ -1440,6 +1306,80 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
             m.get_root().html.add_child(folium.Element(basic_legend))
         except Exception as e:
             st.warning(f"Error creando leyenda de respaldo: {e}")
+            pass
+    
+    # 🔥 CONTORNO SÚPER VISIBLE - AGREGADO AL FINAL PARA QUE APAREZCA ARRIBA
+    try:
+        aoi_geojson = aoi.getInfo()
+        if aoi_geojson:
+            # MÉTODO SÚPER SIMPLE: UNA SOLA LÍNEA SÚPER VISIBLE
+            contorno_final = folium.GeoJson(
+                aoi_geojson,
+                name="🔥 LÍMITE DEL CAMPO",
+                style_function=lambda feature: {
+                    "fillColor": "#FFFF00",    # Amarillo brillante
+                    "color": "#FF0000",        # Rojo brillante
+                    "weight": 25,              # Súper grueso
+                    "fillOpacity": 0.3,        # Relleno semi-transparente
+                    "opacity": 1.0,            # Línea completamente opaca
+                    "dashArray": "25, 15"      # Punteado súper visible
+                },
+                tooltip="🔥 LÍMITE DEL ÁREA ANALIZADA",
+                popup="🌾 CAMPO ANALIZADO"
+            )
+            contorno_final.add_to(m)
+            
+            # MARCADORES BRILLANTES EN LAS ESQUINAS
+            if 'features' in aoi_geojson:
+                for feature in aoi_geojson['features']:
+                    if 'geometry' in feature and 'coordinates' in feature['geometry']:
+                        coords = feature['geometry']['coordinates'][0]
+                        # Solo 4 marcadores en las esquinas principales
+                        for i in [0, len(coords)//4, len(coords)//2, 3*len(coords)//4]:
+                            if i < len(coords):
+                                coord = coords[i]
+                                folium.CircleMarker(
+                                    location=[coord[1], coord[0]],  # lat, lon
+                                    radius=25,
+                                    popup=f"🔴 ESQUINA DEL CAMPO {i+1}",
+                                    color="#FF0000",     # Rojo brillante
+                                    fillColor="#FFFF00", # Amarillo brillante
+                                    fillOpacity=1.0,
+                                    weight=8,
+                                    opacity=1.0
+                                ).add_to(m)
+                                
+    except Exception as e:
+        # Método de emergencia simplificado
+        try:
+            bounds = aoi.geometry().bounds().getInfo()
+            if bounds and 'coordinates' in bounds:
+                coords = bounds['coordinates'][0]
+                
+                simple_geojson = {
+                    "type": "FeatureCollection",
+                    "features": [{
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [coords]
+                        }
+                    }]
+                }
+                
+                folium.GeoJson(
+                    simple_geojson,
+                    name="🔥 LÍMITE EMERGENCIA",
+                    style_function=lambda x: {
+                        "fillColor": "#FF00FF",
+                        "color": "#FF0000", 
+                        "weight": 30,
+                        "fillOpacity": 0.5,
+                        "opacity": 1.0
+                    }
+                ).add_to(m)
+                
+        except:
             pass
     
     # Control de capas
@@ -1811,7 +1751,7 @@ def main():
             )
         
         # 🔍 DEBUG: Límites del Campo
-        with st.expander("🔍 DEBUG: Límites del Campo", expanded=True):
+        with st.expander("🔍 DEBUG: Límites del Campo", expanded=False):
             st.text("=== INFORMACIÓN DE DEBUG ===")
             st.text(f"Tipo de AOI: {type(aoi)}")
             st.text(f"AOI: {str(aoi)[:100]}...")
