@@ -1308,76 +1308,112 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
             st.warning(f"Error creando leyenda de respaldo: {e}")
             pass
     
-    # 🔥 CONTORNO SÚPER VISIBLE - AGREGADO AL FINAL PARA QUE APAREZCA ARRIBA
+    # 🔥 MÉTODO COMPLETAMENTE NUEVO: HTML DIRECTO SUPERPUESTO
     try:
         aoi_geojson = aoi.getInfo()
-        if aoi_geojson:
-            # MÉTODO SÚPER SIMPLE: UNA SOLA LÍNEA SÚPER VISIBLE
-            contorno_final = folium.GeoJson(
-                aoi_geojson,
-                name="🔥 LÍMITE DEL CAMPO",
-                style_function=lambda feature: {
-                    "fillColor": "#FFFF00",    # Amarillo brillante
-                    "color": "#FF0000",        # Rojo brillante
-                    "weight": 25,              # Súper grueso
-                    "fillOpacity": 0.3,        # Relleno semi-transparente
-                    "opacity": 1.0,            # Línea completamente opaca
-                    "dashArray": "25, 15"      # Punteado súper visible
-                },
-                tooltip="🔥 LÍMITE DEL ÁREA ANALIZADA",
-                popup="🌾 CAMPO ANALIZADO"
-            )
-            contorno_final.add_to(m)
-            
-            # MARCADORES BRILLANTES EN LAS ESQUINAS
-            if 'features' in aoi_geojson:
-                for feature in aoi_geojson['features']:
-                    if 'geometry' in feature and 'coordinates' in feature['geometry']:
-                        coords = feature['geometry']['coordinates'][0]
-                        # Solo 4 marcadores en las esquinas principales
-                        for i in [0, len(coords)//4, len(coords)//2, 3*len(coords)//4]:
-                            if i < len(coords):
-                                coord = coords[i]
-                                folium.CircleMarker(
-                                    location=[coord[1], coord[0]],  # lat, lon
-                                    radius=25,
-                                    popup=f"🔴 ESQUINA DEL CAMPO {i+1}",
-                                    color="#FF0000",     # Rojo brillante
-                                    fillColor="#FFFF00", # Amarillo brillante
-                                    fillOpacity=1.0,
-                                    weight=8,
-                                    opacity=1.0
-                                ).add_to(m)
-                                
+        if aoi_geojson and 'features' in aoi_geojson:
+            # Obtener las coordenadas del polígono
+            feature = aoi_geojson['features'][0]
+            if 'geometry' in feature and 'coordinates' in feature['geometry']:
+                coords = feature['geometry']['coordinates'][0]
+                
+                # Convertir coordenadas a puntos para el mapa
+                coord_strings = []
+                for coord in coords:
+                    coord_strings.append(f"{coord[1]},{coord[0]}")  # lat,lon para Leaflet
+                
+                # Crear coordenadas para JavaScript
+                coords_js = str(coords).replace("'", '"')
+                
+                # Crear HTML superpuesto con JavaScript directo
+                contorno_html = f"""
+                <script>
+                // MÉTODO JAVASCRIPT DIRECTO PARA DIBUJAR LÍMITES - EJECUTA DESPUÉS DE CARGAR EL MAPA
+                setTimeout(function() {{
+                    // Buscar el mapa en el window global
+                    var mapObj = null;
+                    for (var key in window) {{
+                        if (key.startsWith('map_') && window[key] && window[key]._container) {{
+                            mapObj = window[key];
+                            break;
+                        }}
+                    }}
+                    
+                    if (mapObj) {{
+                        console.log('🎯 Mapa encontrado, agregando contorno...');
+                        
+                        // Coordenadas del polígono (lat, lon)
+                        var coords = {coords_js};
+                        
+                        // Convertir coordenadas de [lon, lat] a [lat, lon] para Leaflet
+                        var leafletCoords = coords.map(function(coord) {{
+                            return [coord[1], coord[0]];  // Intercambiar lon,lat a lat,lon
+                        }});
+                        
+                        // CREAR POLÍGONO SÚPER VISIBLE
+                        var polygon = L.polygon(leafletCoords, {{
+                            color: '#FF0000',        // Rojo brillante
+                            weight: 15,              // Súper grueso
+                            opacity: 1.0,            // Completamente opaco
+                            fillColor: '#FFFF00',    // Amarillo brillante
+                            fillOpacity: 0.3,        // Semi-transparente
+                            dashArray: '20, 10'      // Punteado visible
+                        }});
+                        
+                        // Agregar al mapa
+                        polygon.addTo(mapObj);
+                        
+                        // AGREGAR MARCADORES GIGANTES EN LAS ESQUINAS
+                        for (var i = 0; i < leafletCoords.length; i += Math.max(1, Math.floor(leafletCoords.length/4))) {{
+                            if (i < leafletCoords.length) {{
+                                var marker = L.circleMarker(leafletCoords[i], {{
+                                    radius: 20,
+                                    color: '#FF0000',
+                                    fillColor: '#FFFF00',
+                                    fillOpacity: 1.0,
+                                    weight: 8
+                                }});
+                                marker.addTo(mapObj);
+                                marker.bindPopup('🔴 LÍMITE DEL CAMPO - PUNTO ' + (i+1));
+                            }}
+                        }}
+                        
+                        console.log('✅ CONTORNO AGREGADO CON JAVASCRIPT DIRECTO - ' + leafletCoords.length + ' puntos');
+                    }} else {{
+                        console.log('❌ No se encontró el mapa en window');
+                        console.log('Keys en window:', Object.keys(window).filter(k => k.includes('map')));
+                    }}
+                }}, 3000);  // Esperar 3 segundos para asegurar que el mapa esté listo
+                </script>
+                """
+                
+                # Agregar el HTML al mapa
+                m.get_root().html.add_child(folium.Element(contorno_html))
+                
+                # MÉTODO ADICIONAL: Marcadores enormes como fallback
+                for i in [0, len(coords)//4, len(coords)//2, 3*len(coords)//4]:
+                    if i < len(coords):
+                        coord = coords[i]
+                        folium.Marker(
+                            location=[coord[1], coord[0]],
+                            popup=f"🔴 LÍMITE CAMPO - PUNTO {i+1}",
+                            icon=folium.Icon(color='red', icon='exclamation-sign', prefix='fa')
+                        ).add_to(m)
+                        
     except Exception as e:
-        # Método de emergencia simplificado
+        # Método de emergencia con marcadores gigantes
         try:
             bounds = aoi.geometry().bounds().getInfo()
             if bounds and 'coordinates' in bounds:
                 coords = bounds['coordinates'][0]
                 
-                simple_geojson = {
-                    "type": "FeatureCollection",
-                    "features": [{
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Polygon",
-                            "coordinates": [coords]
-                        }
-                    }]
-                }
-                
-                folium.GeoJson(
-                    simple_geojson,
-                    name="🔥 LÍMITE EMERGENCIA",
-                    style_function=lambda x: {
-                        "fillColor": "#FF00FF",
-                        "color": "#FF0000", 
-                        "weight": 30,
-                        "fillOpacity": 0.5,
-                        "opacity": 1.0
-                    }
-                ).add_to(m)
+                # Marcadores gigantes en todas las esquinas
+                for i, coord in enumerate(coords[::max(1, len(coords)//4)]):
+                    folium.Marker(
+                        location=[coord[1], coord[0]],
+                        popup=f"🚨 LÍMITE CAMPO EMERGENCIA {i+1}",
+                        icon=folium.Icon(color='red', icon='warning', prefix='fa')
+                    ).add_to(m)
                 
         except:
             pass
@@ -1594,15 +1630,15 @@ def main():
     
     # MENSAJE DE CONEXIÓN ELIMINADO
     
-    # Área de upload MEJORADA - Negro con letras blancas que se ven bien
+    # 🔥 ÁREA DE UPLOAD - FORZADO CON !IMPORTANT PARA QUE FUNCIONE
     st.markdown("""
-    <div style="background: linear-gradient(135deg, #2a2a2a, #1a1a1a); 
-                padding: 25px; border-radius: 15px; margin: 20px 0; 
-                border: 2px solid #00D2BE; text-align: center;">
-        <h3 style="color: #00D2BE; margin: 0 0 15px 0;">
+    <div style="background: linear-gradient(135deg, #2a2a2a, #1a1a1a) !important; 
+                padding: 25px !important; border-radius: 15px !important; margin: 20px 0 !important; 
+                border: 2px solid #00D2BE !important; text-align: center !important;">
+        <h3 style="color: #00D2BE !important; margin: 0 0 15px 0 !important; font-weight: bold !important;">
             📁 Carga de Archivos KMZ
         </h3>
-        <p style="color: #ffffff; margin: 0;">
+        <p style="color: #ffffff !important; margin: 0 !important; font-size: 1.1rem !important;">
             Selecciona uno o más archivos KMZ para analizar cultivos y rotación
         </p>
     </div>
