@@ -33,26 +33,196 @@ st.set_page_config(
 # CSS personalizado
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #2E8B57;
+    /* Ocultar elementos de Streamlit */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Logo VISU - DISEÑO ELEGANTE QUE YA FUNCIONA */
+    .visu-logo-container {
         text-align: center;
-        margin-bottom: 2rem;
+        margin: 20px 0 30px 0;
+        padding: 20px;
     }
+    
+    .minimal-container {
+        display: inline-block;
+        position: relative;
+    }
+    
+    .visu-minimal {
+        font-size: 60px;
+        font-weight: 300;
+        letter-spacing: 15px;
+        color: #C0C0C0;
+        margin-bottom: 10px;
+        margin-left: 15px; /* Compensar el letter-spacing */
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    .eye-underline {
+        width: 100%;
+        height: 3px;
+        background: linear-gradient(90deg, transparent 0%, #00D2BE 20%, #00D2BE 80%, transparent 100%);
+        position: relative;
+    }
+    
+    .eye-dot {
+        width: 15px;
+        height: 15px;
+        background: #00D2BE;
+        border-radius: 50%;
+        position: absolute;
+        top: -6px;
+        left: 50%;
+        transform: translateX(-50%);
+        box-shadow: 0 0 20px #00D2BE;
+    }
+    
+    .tagline {
+        font-size: 16px;
+        color: #C0C0C0;
+        letter-spacing: 2px;
+        margin-top: 15px;
+        font-weight: 300;
+    }
+    
+    /* Responsive design para móviles */
+    @media (max-width: 768px) {
+        .visu-minimal {
+            font-size: 45px;
+            letter-spacing: 10px;
+            margin-left: 10px;
+        }
+        
+        .tagline {
+            font-size: 14px;
+            letter-spacing: 1px;
+        }
+        
+        .main .block-container {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+        }
+        
+        .stSelectbox > div > div {
+            font-size: 14px;
+        }
+        
+        .metric-container {
+            text-align: center !important;
+        }
+        
+        .stColumns > div {
+            padding: 0.5rem !important;
+        }
+        
+        /* Hacer botones más grandes en móvil */
+        .stButton > button {
+            width: 100% !important;
+            padding: 0.75rem !important;
+            font-size: 16px !important;
+        }
+        
+        /* MEJORAR FILE UPLOADER EN MÓVIL */
+        [data-testid="stFileUploader"] {
+            background-color: #f0f8ff !important;
+            border: 3px dashed #0066cc !important;
+            border-radius: 15px !important;
+            padding: 20px !important;
+            text-align: center !important;
+        }
+        
+        [data-testid="stFileUploader"] label {
+            font-size: 18px !important;
+            font-weight: bold !important;
+            color: #0066cc !important;
+        }
+        
+        /* Mejorar tablas en móvil */
+        .dataframe {
+            font-size: 12px !important;
+        }
+        
+        /* Sidebar responsive */
+        .css-1d391kg {
+            padding-top: 1rem !important;
+        }
+    }
+    
+    /* Estilo general mejorado */
     .upload-section {
-        border: 2px dashed #2E8B57;
+        background-color: #f0f8ff;
+        padding: 1.5rem;
         border-radius: 10px;
-        padding: 2rem;
-        text-align: center;
+        border-left: 5px solid #0066cc;
         margin: 1rem 0;
     }
-    .results-section {
-        background-color: #f0f8f0;
-        border-radius: 10px;
+    
+    .metric-container {
+        background-color: #f8f9fa;
         padding: 1rem;
-        margin: 1rem 0;
+        border-radius: 8px;
+        text-align: center;
+        border: 1px solid #e9ecef;
+    }
+    
+    /* Mejorar apariencia de métricas */
+    div[data-testid="metric-container"] {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    /* MEJORAR FILE UPLOADER EN GENERAL */
+    [data-testid="stFileUploader"] {
+        background: linear-gradient(135deg, #f0f8ff, #e6f3ff) !important;
+        border: 3px dashed #0066cc !important;
+        border-radius: 15px !important;
+        padding: 25px !important;
+        text-align: center !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    [data-testid="stFileUploader"]:hover {
+        background: linear-gradient(135deg, #e6f3ff, #cce7ff) !important;
+        border-color: #0052cc !important;
+        transform: scale(1.02) !important;
+    }
+    
+    [data-testid="stFileUploader"] label {
+        font-size: 20px !important;
+        font-weight: bold !important;
+        color: #0066cc !important;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.1) !important;
+    }
+    
+    /* Centrar contenido en móviles */
+    @media (max-width: 480px) {
+        h1, h2, h3 {
+            text-align: center !important;
+        }
+        
+        .stSelectbox {
+            margin-bottom: 1rem !important;
+        }
     }
 </style>
+""", unsafe_allow_html=True)
+
+# Logo VISU con tagline para cultivos - DISEÑO ELEGANTE QUE YA FUNCIONA
+st.markdown("""
+<div class="visu-logo-container">
+    <div class="minimal-container">
+        <div class="visu-minimal">VISU</div>
+        <div class="eye-underline">
+            <div class="eye-dot"></div>
+        </div>
+        <div class="tagline">Análisis de Rotación de Cultivos</div>
+    </div>
+</div>
 """, unsafe_allow_html=True)
 
 # Título principal
@@ -1431,30 +1601,23 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
     return m
 
 def main():
-    # 🎯 LOGO VISU MEJORADO Y MÁS VISUAL
+    # Logo VISU con tagline para cultivos - DISEÑO ELEGANTE QUE YA FUNCIONA
     st.markdown("""
-    <div style="text-align: center; padding: 20px; margin-bottom: 30px; 
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                border-radius: 15px; box-shadow: 0 8px 25px rgba(0,0,0,0.3);
-                color: white; border: 3px solid #fff;">
-        <h1 style="font-size: 3rem; margin: 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); 
-                   font-weight: bold; letter-spacing: 8px;">
-            🎯 V I S U
-        </h1>
-        <h2 style="font-size: 1.2rem; margin: 10px 0; opacity: 0.9; 
-                   text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">
-            ✨ VISUALIZE WITH SUPERPOWERS ✨
-        </h2>
-        <h3 style="font-size: 1.8rem; margin: 10px 0; color: #FFD700; 
-                   text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">
-            🌾 Análisis de Rotación de Cultivos
-        </h3>
-        <p style="font-size: 1rem; margin: 0; opacity: 0.8;">
-            📄 Sube tus archivos KMZ y obtén análisis detallado
-        </p>
+    <div class="visu-logo-container">
+        <div class="minimal-container">
+            <div class="visu-minimal">VISU</div>
+            <div class="eye-underline">
+                <div class="eye-dot"></div>
+            </div>
+            <div class="tagline">Análisis de Rotación de Cultivos</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
     
+    # Título principal
+    st.markdown('<h1 class="main-header">🌾 Análisis de Rotación de Cultivos</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Sube tus archivos KMZ y obtén análisis detallado de cultivos y rotación</p>', unsafe_allow_html=True)
+
     # ⚠️ AVISO IMPORTANTE SOBRE MÓVILES
     st.markdown("""
     <div style="background-color: #fff3cd; border-left: 5px solid #ffc107; 
@@ -1471,123 +1634,6 @@ def main():
     """, unsafe_allow_html=True)
     
     st.markdown("---")
-    
-    # CSS Responsive para móviles CON MEJORAS PARA UPLOAD
-    st.markdown("""
-    <style>
-    /* Responsive design para móviles */
-    @media (max-width: 768px) {
-        .main .block-container {
-            padding-left: 1rem !important;
-            padding-right: 1rem !important;
-        }
-        
-        .stSelectbox > div > div {
-            font-size: 14px;
-        }
-        
-        .metric-container {
-            text-align: center !important;
-        }
-        
-        .stColumns > div {
-            padding: 0.5rem !important;
-        }
-        
-        /* Hacer botones más grandes en móvil */
-        .stButton > button {
-            width: 100% !important;
-            padding: 0.75rem !important;
-            font-size: 16px !important;
-        }
-        
-        /* MEJORAR FILE UPLOADER EN MÓVIL */
-        [data-testid="stFileUploader"] {
-            background-color: #f0f8ff !important;
-            border: 3px dashed #0066cc !important;
-            border-radius: 15px !important;
-            padding: 20px !important;
-            text-align: center !important;
-        }
-        
-        [data-testid="stFileUploader"] label {
-            font-size: 18px !important;
-            font-weight: bold !important;
-            color: #0066cc !important;
-        }
-        
-        /* Mejorar tablas en móvil */
-        .dataframe {
-            font-size: 12px !important;
-        }
-        
-        /* Sidebar responsive */
-        .css-1d391kg {
-            padding-top: 1rem !important;
-        }
-    }
-    
-    /* Estilo general mejorado */
-    .upload-section {
-        background-color: #f0f8ff;
-        padding: 1.5rem;
-        border-radius: 10px;
-        border-left: 5px solid #0066cc;
-        margin: 1rem 0;
-    }
-    
-    .metric-container {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 8px;
-        text-align: center;
-        border: 1px solid #e9ecef;
-    }
-    
-    /* Mejorar apariencia de métricas */
-    div[data-testid="metric-container"] {
-        background-color: #f8f9fa;
-        border: 1px solid #dee2e6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    /* MEJORAR FILE UPLOADER EN GENERAL */
-    [data-testid="stFileUploader"] {
-        background: linear-gradient(135deg, #f0f8ff, #e6f3ff) !important;
-        border: 3px dashed #0066cc !important;
-        border-radius: 15px !important;
-        padding: 25px !important;
-        text-align: center !important;
-        transition: all 0.3s ease !important;
-    }
-    
-    [data-testid="stFileUploader"]:hover {
-        background: linear-gradient(135deg, #e6f3ff, #cce7ff) !important;
-        border-color: #0052cc !important;
-        transform: scale(1.02) !important;
-    }
-    
-    [data-testid="stFileUploader"] label {
-        font-size: 20px !important;
-        font-weight: bold !important;
-        color: #0066cc !important;
-        text-shadow: 1px 1px 2px rgba(0,0,0,0.1) !important;
-    }
-    
-    /* Centrar contenido en móviles */
-    @media (max-width: 480px) {
-        h1, h2, h3 {
-            text-align: center !important;
-        }
-        
-        .stSelectbox {
-            margin-bottom: 1rem !important;
-        }
-    }
-    </style>
-    """, unsafe_allow_html=True)
     
     # Inicializar session state si no existe
     if 'resultados_analisis' not in st.session_state:
