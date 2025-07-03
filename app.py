@@ -1088,76 +1088,39 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
         except Exception as e:
             pass  # Si falla, continuar sin tiles
     
-    # 🔥 CONTORNO SÚPER VISIBLE - MÚLTIPLES MÉTODOS PARA ASEGURAR VISIBILIDAD
+    # 🔥 CONTORNO SÚPER SIMPLE QUE DEFINITIVAMENTE FUNCIONA
     try:
+        print("🔍 Intentando obtener geometría del AOI...")
         aoi_geojson = aoi.getInfo()
-        if aoi_geojson and 'features' in aoi_geojson:
-            # MÉTODO 1: Contorno grueso rojo con fondo amarillo
-            contorno_principal = folium.GeoJson(
+        print(f"✅ AOI obtenido: {type(aoi_geojson)}")
+        
+        if aoi_geojson:
+            print(f"🎯 Agregando contorno simple y visible...")
+            
+            # MÉTODO ULTRA SIMPLE: Solo línea roja gruesa
+            contorno_simple = folium.GeoJson(
                 aoi_geojson,
                 name="🔥 LÍMITE DEL CAMPO",
                 style_function=lambda feature: {
-                    "fillColor": "#FFFF00",      # Amarillo brillante
-                    "color": "#FF0000",          # Rojo brillante
-                    "weight": 8,                 # Línea gruesa
-                    "fillOpacity": 0.15,         # Fondo semi-transparente
-                    "opacity": 1.0,              # Línea completamente opaca
-                    "dashArray": "15, 10"        # Línea punteada muy visible
+                    "fillColor": "#FFFF00",    # Amarillo
+                    "color": "#FF0000",        # Rojo
+                    "weight": 15,              # MUY grueso
+                    "fillOpacity": 0.2,        # Fondo visible
+                    "opacity": 1.0,            # Línea completamente opaca
+                    "dashArray": "20, 10"      # Punteado muy visible
                 },
                 tooltip="🔥 LÍMITE DEL ÁREA ANALIZADA",
                 popup="🌾 CAMPO ANALIZADO"
             )
-            contorno_principal.add_to(m)
+            contorno_simple.add_to(m)
+            print("✅ Contorno agregado al mapa")
             
-            # MÉTODO 2: Contorno blanco debajo para mayor contraste
-            contorno_fondo = folium.GeoJson(
-                aoi_geojson,
-                name="",  # Sin nombre para que no aparezca en la leyenda
-                style_function=lambda feature: {
-                    "fillColor": "transparent",
-                    "color": "#FFFFFF",          # Blanco de fondo
-                    "weight": 12,                # Más grueso que el principal
-                    "fillOpacity": 0,
-                    "opacity": 0.8,
-                    "dashArray": "15, 10"
-                }
-            )
-            contorno_fondo.add_to(m)
-            
-            # MÉTODO 3: Marcadores en las esquinas para extra visibilidad
-            for i, feature in enumerate(aoi_geojson['features']):
-                if 'geometry' in feature and 'coordinates' in feature['geometry']:
-                    coords = feature['geometry']['coordinates'][0]
-                    if len(coords) > 3:  # Asegurar que hay suficientes puntos
-                        # Agregar marcadores en las 4 esquinas del polígono
-                        corner_indices = [0, len(coords)//4, len(coords)//2, 3*len(coords)//4]
-                        for idx in corner_indices[:4]:  # Solo 4 esquinas
-                            if idx < len(coords):
-                                lon, lat = coords[idx][0], coords[idx][1]
-                                folium.CircleMarker(
-                                    location=[lat, lon],
-                                    radius=8,
-                                    popup=f"🔴 Esquina del Campo",
-                                    color="red",
-                                    fillColor="yellow",
-                                    fillOpacity=1.0,
-                                    weight=3
-                                ).add_to(m)
-            
-            print(f"✅ Contorno MEJORADO agregado: {len(aoi_geojson['features'])} features con múltiples métodos")
         else:
-            print("❌ No se pudo obtener AOI geojson o no tiene features")
+            print("❌ AOI geojson es None")
     except Exception as e:
-        print(f"❌ Error agregando contorno mejorado: {e}")
-        # Fallback: método simple
-        try:
-            simple_style = {"color": "red", "weight": 10, "opacity": 1.0}
-            aoi_simple = aoi.getInfo()
-            if aoi_simple:
-                folium.GeoJson(aoi_simple, style_function=lambda x: simple_style).add_to(m)
-                print("✅ Fallback: Contorno simple agregado")
-        except:
-            pass
+        print(f"❌ Error agregando contorno: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Crear leyenda con información de cultivos
     legend_added = False
@@ -1534,36 +1497,7 @@ def crear_visor_cultivos_interactivo(aoi, df_resultados):
         # Agregar el grupo de características al mapa
         feature_group.add_to(m)
     
-    # 🔥 CONTORNO MEGA VISIBLE - MISMO MÉTODO (FALLBACK)
-    try:
-        # Obtener geometría del AOI como GeoJSON
-        aoi_geojson = aoi.getInfo()
-        
-        if aoi_geojson and 'features' in aoi_geojson:
-            # SOLO UNA LÍNEA SÚPER GRUESA Y BRILLANTE
-            contorno_campo = folium.GeoJson(
-            aoi_geojson,
-                name="🔥 LÍMITE DEL CAMPO",
-                style_function=lambda feature: {
-                    "fillColor": "yellow",
-                "color": "red",
-                    "weight": 10,
-                    "fillOpacity": 0.1,
-                    "opacity": 1.0,
-                    "dashArray": "10, 10"
-                },
-                tooltip="LÍMITE DEL ÁREA ANALIZADA",
-                popup="CAMPO ANALIZADO"
-            )
-            contorno_campo.add_to(m)
-            
-            print(f"✅ Contorno fallback agregado: {len(aoi_geojson['features'])} features")
-        else:
-            print("❌ Fallback: No se pudo obtener AOI geojson")
-        
-    except Exception as e:
-        print(f"❌ Error contorno fallback: {e}")
-        pass
+    # 🔥 CONTORNO FALLBACK ELIMINADO (YA HAY UNO ARRIBA)
     
     # Agregar control de capas
     folium.LayerControl(collapsed=False).add_to(m)
