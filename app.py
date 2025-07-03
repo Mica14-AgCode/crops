@@ -229,6 +229,23 @@ st.markdown("""
 st.markdown('<h1 class="main-header">🌾 Análisis de Rotación de Cultivos</h1>', unsafe_allow_html=True)
 st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Sube tus archivos KMZ y obtén análisis detallado de cultivos y rotación</p>', unsafe_allow_html=True)
 
+# ⚠️ AVISO IMPORTANTE SOBRE MÓVILES
+st.markdown("""
+<div style="background-color: #fff3cd; border-left: 5px solid #ffc107; 
+            padding: 15px; margin: 20px 0; border-radius: 8px;">
+    <h4 style="color: #856404; margin: 0 0 10px 0;">
+        📱 <strong>IMPORTANTE: Uso en Dispositivos Móviles</strong>
+    </h4>
+    <p style="color: #856404; margin: 0; line-height: 1.4;">
+        <strong>⚠️ Limitación conocida:</strong> Los archivos KMZ pueden no subir correctamente en navegadores móviles (iPhone, Android).<br>
+        <strong>💡 Solución recomendada:</strong> Usa una computadora de escritorio o laptop para mejores resultados.<br>
+        <strong>🔄 Alternativa:</strong> Si solo tienes móvil, prueba con diferentes navegadores (Chrome, Firefox, Safari).
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("---")
+
 # Inicialización de Earth Engine
 @st.cache_resource
 def init_earth_engine():
