@@ -1833,40 +1833,60 @@ def procesar_campos_cuit(cuit, solo_activos=True):
 def crear_tiles_inundacion_por_ano(geometry, anos_completos):
     """
     Crea tiles de Earth Engine para cada año mostrando píxeles azules donde se detectó agua
-    CON DEBUG COMPLETO para ver qué está pasando
+    CON DEBUG PERSISTENTE que NO SE BORRA
     """
     tiles_urls = {}
     
     try:
-        st.markdown("🔍 **Generando tiles de inundación...**")
-        st.markdown("🐛 **DEBUG MODE ACTIVADO**")
+        # CONTENEDORES PERSISTENTES PARA DEBUG
+        debug_container = st.container()
+        with debug_container:
+            st.markdown("🔍 **Generando tiles de inundación...**")
+            st.markdown("🐛 **DEBUG MODE ACTIVADO**")
         
-        # Cargar dataset GSW
-        gsw = ee.ImageCollection("JRC/GSW1_3/YearlyHistory")
+        progress_container = st.container()
+        
+        # Cargar dataset GSW - ACTUALIZADO A LA NUEVA VERSIÓN
+        gsw = ee.ImageCollection("JRC/GSW1_4/YearlyHistory")
         
         # Procesar solo años más recientes primero para debug
         anos_proceso = anos_completos[-3:] if len(anos_completos) > 3 else anos_completos
-        st.markdown(f"📅 **Procesando años**: {anos_proceso}")
         
-        for ano in anos_proceso:
+        with debug_container:
+            st.markdown(f"📅 **Procesando años**: {anos_proceso}")
+            st.markdown("---")
+        
+        for i, ano in enumerate(anos_proceso):
             try:
-                st.markdown(f"🔧 **Procesando año {ano}...**")
+                with progress_container:
+                    progress = (i + 1) / len(anos_proceso)
+                    st.progress(progress, f"Procesando año {ano}... ({i+1}/{len(anos_proceso)})")
+                
+                with debug_container:
+                    st.markdown(f"### 🔧 **Año {ano}**")
                 
                 if ano <= 2019:
                     # JRC GSW para 1984-2019
-                    st.markdown(f"🌍 Usando JRC GSW para año {ano}")
+                    with debug_container:
+                        st.markdown(f"🌍 **Fuente**: JRC GSW")
+                    
                     year_img = gsw.filter(ee.Filter.eq('year', ano)).first()
                     
                     if year_img:
-                        st.markdown(f"✅ Imagen GSW encontrada para {ano}")
+                        with debug_container:
+                            st.success(f"✅ Imagen GSW encontrada para {ano}")
                         
                         # Crear máscara de agua (valor 2 = agua permanente)
                         water_mask = year_img.eq(2)
-                        st.markdown(f"🔧 Máscara de agua creada")
+                        
+                        with debug_container:
+                            st.info(f"🔧 Máscara de agua creada (GSW == 2)")
                         
                         # Clipear al área
                         water_clipped = water_mask.clip(geometry)
-                        st.markdown(f"✂️ Imagen clipeada al área")
+                        
+                        with debug_container:
+                            st.info(f"✂️ Imagen clipeada al área de interés")
                         
                         # Visualización azul
                         vis_params = {
@@ -1874,46 +1894,65 @@ def crear_tiles_inundacion_por_ano(geometry, anos_completos):
                             'max': 1,
                             'palette': ['transparent', '#0066FF']
                         }
-                        st.markdown(f"🎨 Parámetros visualización: {vis_params}")
                         
-                        # Obtener tiles - CON DEBUG COMPLETO
+                        with debug_container:
+                            st.code(f"Parámetros: {vis_params}")
+                        
+                        # Obtener tiles - CON DEBUG COMPLETO Y PERSISTENTE
                         try:
-                            st.markdown(f"🔄 Obteniendo mapId...")
+                            with debug_container:
+                                st.markdown(f"🔄 **Obteniendo mapId...**")
+                            
                             map_id = water_clipped.getMapId(vis_params)
-                            st.markdown(f"✅ MapId obtenido: {type(map_id)}")
-                            st.markdown(f"🔍 Keys disponibles: {list(map_id.keys())}")
+                            
+                            with debug_container:
+                                st.success(f"✅ MapId obtenido: `{type(map_id)}`")
+                                st.json({"Keys disponibles": list(map_id.keys())})
                             
                             # Intentar múltiples formas de obtener URL
                             url_obtenida = None
                             
                             if hasattr(map_id, 'tile_fetcher') and hasattr(map_id.tile_fetcher, 'url_template'):
                                 url_obtenida = map_id.tile_fetcher.url_template
-                                st.markdown(f"✅ URL obtenida (método 1): {url_obtenida[:50]}...")
+                                with debug_container:
+                                    st.success(f"✅ **Método 1 exitoso**: {url_obtenida[:50]}...")
                             elif 'tile_fetcher' in map_id and 'url_template' in map_id['tile_fetcher']:
                                 url_obtenida = map_id['tile_fetcher']['url_template']
-                                st.markdown(f"✅ URL obtenida (método 2): {url_obtenida[:50]}...")
+                                with debug_container:
+                                    st.success(f"✅ **Método 2 exitoso**: {url_obtenida[:50]}...")
                             elif 'urlTemplate' in map_id:
                                 url_obtenida = map_id['urlTemplate']
-                                st.markdown(f"✅ URL obtenida (método 3): {url_obtenida[:50]}...")
+                                with debug_container:
+                                    st.success(f"✅ **Método 3 exitoso**: {url_obtenida[:50]}...")
                             else:
-                                st.error(f"❌ No se pudo obtener URL. Estructura: {map_id}")
+                                with debug_container:
+                                    st.error(f"❌ **Fallo**: No se pudo obtener URL")
+                                    st.json({"Estructura completa": str(map_id)})
                             
                             if url_obtenida:
                                 tiles_urls[ano] = url_obtenida
-                                st.success(f"🎉 Tiles GSW {ano} generados correctamente")
+                                with debug_container:
+                                    st.balloons()  # Celebración visual
+                                    st.success(f"🎉 **GSW {ano} EXITOSO** - Tiles generados")
                             else:
-                                st.error(f"❌ No se pudo obtener URL de tiles para {ano}")
+                                with debug_container:
+                                    st.error(f"❌ **GSW {ano} FALLÓ** - No se pudo obtener URL")
                                 
                         except Exception as e:
-                            st.error(f"❌ Error obteniendo tiles GSW {ano}: {e}")
-                            import traceback
-                            st.code(traceback.format_exc())
+                            with debug_container:
+                                st.error(f"❌ **Excepción GSW {ano}**: `{e}`")
+                                with st.expander(f"🔍 Traceback completo {ano}"):
+                                    import traceback
+                                    st.code(traceback.format_exc())
                     else:
-                        st.warning(f"⚠️ No hay imagen GSW para {ano}")
+                        with debug_container:
+                            st.warning(f"⚠️ **Sin imagen GSW** para {ano}")
                             
                 else:
                     # Sentinel-2 para 2020+
-                    st.markdown(f"🛰️ Usando Sentinel-2 para año {ano}")
+                    with debug_container:
+                        st.markdown(f"🛰️ **Fuente**: Sentinel-2 NDWI")
+                    
                     fecha_inicio = f"{ano}-01-01"
                     fecha_fin = f"{ano}-12-31"
                     
@@ -1923,7 +1962,12 @@ def crear_tiles_inundacion_por_ano(geometry, anos_completos):
                         .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50))
                     
                     count = s2.size().getInfo()
-                    st.markdown(f"📊 Imágenes S2 encontradas: {count}")
+                    
+                    with debug_container:
+                        if count > 0:
+                            st.success(f"📊 **{count} imágenes S2** encontradas para {ano}")
+                        else:
+                            st.warning(f"📊 **0 imágenes S2** para {ano}")
                     
                     if count > 0:
                         # Función NDWI original
@@ -1938,15 +1982,21 @@ def crear_tiles_inundacion_por_ano(geometry, anos_completos):
                         # Aplicar NDWI y obtener máximo anual (fórmula original)
                         s2_ndwi = s2.map(add_ndwi)
                         ndwi_max = s2_ndwi.select('NDWI').max()
-                        st.markdown(f"🔧 NDWI máximo calculado")
+                        
+                        with debug_container:
+                            st.info(f"🔧 **NDWI máximo** calculado correctamente")
                         
                         # Máscara de agua (NDWI > 0.1 - umbral original)
                         water_mask = ndwi_max.gt(0.1)
-                        st.markdown(f"🔧 Máscara de agua S2 creada")
+                        
+                        with debug_container:
+                            st.info(f"🔧 **Máscara S2** creada (NDWI > 0.1)")
                         
                         # Clipear al área
                         water_clipped = water_mask.clip(geometry)
-                        st.markdown(f"✂️ Imagen S2 clipeada al área")
+                        
+                        with debug_container:
+                            st.info(f"✂️ **S2 clipeada** al área de interés")
                         
                         # Visualización azul
                         vis_params = {
@@ -1954,62 +2004,105 @@ def crear_tiles_inundacion_por_ano(geometry, anos_completos):
                             'max': 1,
                             'palette': ['transparent', '#0066FF']
                         }
-                        st.markdown(f"🎨 Parámetros visualización S2: {vis_params}")
                         
-                        # Obtener tiles con debug
+                        with debug_container:
+                            st.code(f"Parámetros S2: {vis_params}")
+                        
+                        # Obtener tiles con debug persistente
                         try:
-                            st.markdown(f"🔄 Obteniendo mapId S2...")
+                            with debug_container:
+                                st.markdown(f"🔄 **Obteniendo mapId S2...**")
+                            
                             map_id = water_clipped.getMapId(vis_params)
-                            st.markdown(f"✅ MapId S2 obtenido: {type(map_id)}")
-                            st.markdown(f"🔍 Keys S2 disponibles: {list(map_id.keys())}")
+                            
+                            with debug_container:
+                                st.success(f"✅ **MapId S2** obtenido: `{type(map_id)}`")
+                                st.json({"Keys S2 disponibles": list(map_id.keys())})
                             
                             # Intentar múltiples formas de obtener URL
                             url_obtenida = None
                             
                             if hasattr(map_id, 'tile_fetcher') and hasattr(map_id.tile_fetcher, 'url_template'):
                                 url_obtenida = map_id.tile_fetcher.url_template
-                                st.markdown(f"✅ URL S2 obtenida (método 1): {url_obtenida[:50]}...")
+                                with debug_container:
+                                    st.success(f"✅ **S2 Método 1**: {url_obtenida[:50]}...")
                             elif 'tile_fetcher' in map_id and 'url_template' in map_id['tile_fetcher']:
                                 url_obtenida = map_id['tile_fetcher']['url_template']
-                                st.markdown(f"✅ URL S2 obtenida (método 2): {url_obtenida[:50]}...")
+                                with debug_container:
+                                    st.success(f"✅ **S2 Método 2**: {url_obtenida[:50]}...")
                             elif 'urlTemplate' in map_id:
                                 url_obtenida = map_id['urlTemplate']
-                                st.markdown(f"✅ URL S2 obtenida (método 3): {url_obtenida[:50]}...")
+                                with debug_container:
+                                    st.success(f"✅ **S2 Método 3**: {url_obtenida[:50]}...")
                             else:
-                                st.error(f"❌ No se pudo obtener URL S2. Estructura: {map_id}")
+                                with debug_container:
+                                    st.error(f"❌ **S2 fallo**: No se pudo obtener URL")
+                                    st.json({"Estructura S2": str(map_id)})
                             
                             if url_obtenida:
                                 tiles_urls[ano] = url_obtenida
-                                st.success(f"🎉 Tiles S2 {ano} generados correctamente ({count} imágenes)")
+                                with debug_container:
+                                    st.balloons()  # Celebración visual
+                                    st.success(f"🎉 **S2 {ano} EXITOSO** - {count} imágenes procesadas")
                             else:
-                                st.error(f"❌ No se pudo obtener URL de tiles S2 para {ano}")
+                                with debug_container:
+                                    st.error(f"❌ **S2 {ano} FALLÓ** - No se pudo obtener URL")
                                 
                         except Exception as e:
-                            st.error(f"❌ Error obteniendo tiles S2 {ano}: {e}")
-                            import traceback
-                            st.code(traceback.format_exc())
+                            with debug_container:
+                                st.error(f"❌ **Excepción S2 {ano}**: `{e}`")
+                                with st.expander(f"🔍 Traceback S2 {ano}"):
+                                    import traceback
+                                    st.code(traceback.format_exc())
                     else:
-                        st.info(f"ℹ️ Sin imágenes S2 para {ano}")
+                        with debug_container:
+                            st.info(f"ℹ️ **Sin imágenes S2** para {ano}")
+                        
+                with debug_container:
+                    st.markdown("---")
                         
             except Exception as e:
-                st.error(f"❌ Error procesando año {ano}: {e}")
-                import traceback
-                st.code(traceback.format_exc())
+                with debug_container:
+                    st.error(f"❌ **Error procesando año {ano}**: `{e}`")
+                    with st.expander(f"🔍 Traceback año {ano}"):
+                        import traceback
+                        st.code(traceback.format_exc())
                 continue
         
-        st.markdown("---")
-        if tiles_urls:
-            st.success(f"🎉 **{len(tiles_urls)} tiles de inundación generados**")
-            st.markdown(f"📋 **Años con tiles**: {list(tiles_urls.keys())}")
-        else:
-            st.error("❌ **No se pudieron generar tiles de inundación**")
+        # RESUMEN FINAL PERSISTENTE
+        with debug_container:
+            st.markdown("---")
+            st.markdown("## 📋 **RESUMEN FINAL**")
+            
+            if tiles_urls:
+                st.success(f"🎉 **{len(tiles_urls)} tiles de inundación generados exitosamente**")
+                st.json({"Años exitosos": list(tiles_urls.keys())})
+                
+                # Mostrar URLs (primeros 50 chars)
+                for ano, url in tiles_urls.items():
+                    st.markdown(f"**{ano}**: `{url[:50]}...`")
+            else:
+                st.error(f"❌ **NO se generaron tiles de inundación**")
+                st.markdown("**Posibles causas:**")
+                st.markdown("- Sin imágenes disponibles para los años seleccionados")
+                st.markdown("- Error en la autenticación de Earth Engine")
+                st.markdown("- Área de interés fuera de cobertura")
+                st.markdown("- Problema de conectividad")
+            
+        with progress_container:
+            if tiles_urls:
+                st.success("✅ Generación de tiles completada")
+            else:
+                st.error("❌ Generación de tiles falló")
             
         return tiles_urls
         
     except Exception as e:
-        st.error(f"❌ Error general generando tiles: {e}")
-        import traceback
-        st.code(traceback.format_exc())
+        with debug_container:
+            st.error(f"❌ **Error general generando tiles**: `{e}`")
+            with st.expander("🔍 Traceback general"):
+                import traceback
+                st.code(traceback.format_exc())
         return {}
 
 def crear_mapa_inundacion_con_tiles(aoi, tiles_inundacion, df_inundacion, ano_seleccionado):
@@ -2226,11 +2319,13 @@ def crear_mapa_riesgo_basico(geometry, resultados_por_ano, area_aoi):
         except:
             center_lat, center_lon = -34.0, -60.0  # Fallback Argentina
         
-        # Crear mapa base
+        # Crear mapa base MÁS GRANDE
         m = folium.Map(
             location=[center_lat, center_lon],
             zoom_start=13,
-            tiles="OpenStreetMap"
+            tiles="OpenStreetMap",
+            width='100%',
+            height='600px'  # Altura fija más grande
         )
         
         # Agregar área analizada como polígono azul
@@ -2338,8 +2433,8 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
         # FASE 1: ANÁLISIS CON JRC GLOBAL SURFACE WATER (1984-2019)
         st.markdown("### 🌍 **Fase 1: JRC Global Surface Water (1984-2019)**")
         
-        # Cargar dataset GSW
-        gsw = ee.ImageCollection("JRC/GSW1_3/YearlyHistory")
+        # Cargar dataset GSW - ACTUALIZADO A LA NUEVA VERSIÓN  
+        gsw = ee.ImageCollection("JRC/GSW1_4/YearlyHistory")
         
         # DEBUG: Mostrar años que van a GSW vs Sentinel-2
         anos_gsw = [ano for ano in anos_completos if ano <= 2019]
