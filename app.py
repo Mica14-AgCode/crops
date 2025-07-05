@@ -558,7 +558,7 @@ def analizar_cultivos_web(aoi):
                     # 🔧 MÉTODO PRINCIPAL NO APLICA COLORES CORRECTAMENTE
                     # Aunque "funciona", los colores son incorrectos
                     raise Exception("🎯 FORZANDO método RGB que genera colores EXACTOS")
-                except Exception as e:
+            except Exception as e:
                     # 🎨 MÉTODO RGB PARA COLORES EXACTOS
                     try:
                         
@@ -996,48 +996,44 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
             # 🎯 ORDEN CORRECTO: 100% → 70% → 50% → 30% (de mayor a menor transparencia)
             # ✅ SOLO 50% ACTIVO POR DEFECTO
             
-            # 1. OPACO 100% - OVERLAY=True para permitir múltiples selecciones
+            # 1. OPACO 100% (primero en la lista, NO activo)
             folium.raster_layers.TileLayer(
                 tiles=tiles_urls[campana_seleccionada],
                 attr='Google Earth Engine',
                 name=f'🌾 Cultivos {campana_seleccionada} (100%)',
-                overlay=True,  # ✅ OVERLAY=True permite múltiples selecciones
+                overlay=False,  # NO activo por defecto
                 control=True,
-                opacity=1.0,
-                show=False  # NO activo por defecto
+                opacity=1.0
             ).add_to(m)
             
-            # 2. MEDIO 70% - OVERLAY=True
+            # 2. MEDIO 70% (NO activo)
             folium.raster_layers.TileLayer(
                 tiles=tiles_urls[campana_seleccionada],
                 attr='Google Earth Engine',
                 name=f'🌾 Cultivos {campana_seleccionada} (70%)',
-                overlay=True,  # ✅ OVERLAY=True permite múltiples selecciones
+                overlay=False,  # NO activo por defecto
                 control=True,
-                opacity=0.7,
-                show=False  # NO activo por defecto
+                opacity=0.7
             ).add_to(m)
             
-            # 3. ✅ PREDETERMINADO 50% (ACTIVO POR DEFECTO)
+            # 3. ✅ PREDETERMINADO 50% (ÚNICO ACTIVO)
             folium.raster_layers.TileLayer(
                 tiles=tiles_urls[campana_seleccionada],
                 attr='Google Earth Engine',
                 name=f'🌾 Cultivos {campana_seleccionada} (50%)',
-                overlay=True,   # ✅ OVERLAY=True permite múltiples selecciones
+                overlay=True,   # ✅ ÚNICO ACTIVO
                 control=True,
-                opacity=0.5,
-                show=True  # ✅ ACTIVO por defecto
+                opacity=0.5
             ).add_to(m)
             
-            # 4. CLARO 30% - OVERLAY=True
+            # 4. CLARO 30% (último, NO activo)
             folium.raster_layers.TileLayer(
                 tiles=tiles_urls[campana_seleccionada],
                 attr='Google Earth Engine',
                 name=f'🌾 Cultivos {campana_seleccionada} (30%)',
-                overlay=True,  # ✅ OVERLAY=True permite múltiples selecciones
+                overlay=False,  # NO activo por defecto
                 control=True,
-                opacity=0.3,
-                show=False  # NO activo por defecto
+                opacity=0.3
             ).add_to(m)
             
             # Agregar barra de transparencia ULTRA VISIBLE
@@ -1833,144 +1829,69 @@ def procesar_campos_cuit(cuit, solo_activos=True):
 def crear_tiles_inundacion_por_ano(geometry, anos_completos):
     """
     Crea tiles de Earth Engine para cada año mostrando píxeles azules donde se detectó agua
-    CON DEBUG PERSISTENTE que NO SE BORRA
+    Similar al sistema de cultivos, pero para inundación
     """
     tiles_urls = {}
     
     try:
-        # CONTENEDORES PERSISTENTES PARA DEBUG
-        debug_container = st.container()
-        with debug_container:
-            st.markdown("🔍 **Generando tiles de inundación...**")
-            st.markdown("🐛 **DEBUG MODE ACTIVADO**")
+        st.markdown("🔍 **Generando tiles de inundación...**")
         
-        progress_container = st.container()
+        # Cargar datasets
+        gsw = ee.ImageCollection("JRC/GSW1_3/YearlyHistory")
         
-        # Cargar dataset GSW - ACTUALIZADO A LA NUEVA VERSIÓN
-        gsw = ee.ImageCollection("JRC/GSW1_4/YearlyHistory")
-        
-        # Procesar solo años más recientes primero para debug
-        anos_proceso = anos_completos[-3:] if len(anos_completos) > 3 else anos_completos
-        
-        with debug_container:
-            st.markdown(f"📅 **Procesando años**: {anos_proceso}")
-            st.markdown("---")
-        
-        for i, ano in enumerate(anos_proceso):
+        for ano in anos_completos[:5]:  # LIMITAR A 5 AÑOS PARA DEBUG Y VELOCIDAD
             try:
-                with progress_container:
-                    progress = (i + 1) / len(anos_proceso)
-                    st.progress(progress, f"Procesando año {ano}... ({i+1}/{len(anos_proceso)})")
-                
-                with debug_container:
-                    st.markdown(f"### 🔧 **Año {ano}**")
+                st.markdown(f"🔧 Procesando tiles para año {ano}...")
                 
                 if ano <= 2019:
-                    # JRC GSW para 1984-2019
-                    with debug_container:
-                        st.markdown(f"🌍 **Fuente**: JRC GSW")
-                    
+                    # USAR JRC GSW para años 1984-2019
                     year_img = gsw.filter(ee.Filter.eq('year', ano)).first()
-                    
                     if year_img:
-                        with debug_container:
-                            st.success(f"✅ Imagen GSW encontrada para {ano}")
+                        # Crear imagen de agua (valor 2 = agua)
+                        water_img = year_img.eq(2).multiply(255)  # Blanco donde hay agua
                         
-                        # Crear máscara de agua (valor 2 = agua permanente)
-                        water_mask = year_img.eq(2)
+                        # Clipear al AOI
+                        water_clipped = water_img.clip(geometry)
                         
-                        with debug_container:
-                            st.info(f"🔧 Máscara de agua creada (GSW == 2)")
-                        
-                        # Clipear al área
-                        water_clipped = water_mask.clip(geometry)
-                        
-                        with debug_container:
-                            st.info(f"✂️ Imagen clipeada al área de interés")
-                        
-                        # Visualización azul
+                        # Crear tiles con píxeles azules
                         vis_params = {
                             'min': 0,
-                            'max': 1,
-                            'palette': ['transparent', '#0066FF']
+                            'max': 255,
+                            'palette': ['transparent', '#0066ff']  # Transparente y azul
                         }
                         
-                        with debug_container:
-                            st.code(f"Parámetros: {vis_params}")
+                        map_id = water_clipped.getMapId(vis_params)
                         
-                        # Obtener tiles - CON DEBUG COMPLETO Y PERSISTENTE
-                        try:
-                            with debug_container:
-                                st.markdown(f"🔄 **Obteniendo mapId...**")
-                            
-                            map_id = water_clipped.getMapId(vis_params)
-                            
-                            with debug_container:
-                                st.success(f"✅ MapId obtenido: `{type(map_id)}`")
-                                st.json({"Keys disponibles": list(map_id.keys())})
-                            
-                            # Intentar múltiples formas de obtener URL
-                            url_obtenida = None
-                            
-                            if hasattr(map_id, 'tile_fetcher') and hasattr(map_id.tile_fetcher, 'url_template'):
-                                url_obtenida = map_id.tile_fetcher.url_template
-                                with debug_container:
-                                    st.success(f"✅ **Método 1 exitoso**: {url_obtenida[:50]}...")
-                            elif 'tile_fetcher' in map_id and 'url_template' in map_id['tile_fetcher']:
-                                url_obtenida = map_id['tile_fetcher']['url_template']
-                                with debug_container:
-                                    st.success(f"✅ **Método 2 exitoso**: {url_obtenida[:50]}...")
-                            elif 'urlTemplate' in map_id:
-                                url_obtenida = map_id['urlTemplate']
-                                with debug_container:
-                                    st.success(f"✅ **Método 3 exitoso**: {url_obtenida[:50]}...")
-                            else:
-                                with debug_container:
-                                    st.error(f"❌ **Fallo**: No se pudo obtener URL")
-                                    st.json({"Estructura completa": str(map_id)})
-                            
-                            if url_obtenida:
-                                tiles_urls[ano] = url_obtenida
-                                with debug_container:
-                                    st.balloons()  # Celebración visual
-                                    st.success(f"🎉 **GSW {ano} EXITOSO** - Tiles generados")
-                            else:
-                                with debug_container:
-                                    st.error(f"❌ **GSW {ano} FALLÓ** - No se pudo obtener URL")
-                                
-                        except Exception as e:
-                            with debug_container:
-                                st.error(f"❌ **Excepción GSW {ano}**: `{e}`")
-                                with st.expander(f"🔍 Traceback completo {ano}"):
-                                    import traceback
-                                    st.code(traceback.format_exc())
+                        # Obtener URL de tiles
+                        if hasattr(map_id, 'tile_fetcher') and hasattr(map_id.tile_fetcher, 'url_template'):
+                            tiles_urls[ano] = map_id.tile_fetcher.url_template
+                            st.markdown(f"   ✅ Tiles GSW {ano}: OK")
+                        elif 'tile_fetcher' in map_id and hasattr(map_id['tile_fetcher'], 'url_template'):
+                            tiles_urls[ano] = map_id['tile_fetcher'].url_template
+                            st.markdown(f"   ✅ Tiles GSW {ano}: OK (dict)")
+                        elif 'urlTemplate' in map_id:
+                            tiles_urls[ano] = map_id['urlTemplate']
+                            st.markdown(f"   ✅ Tiles GSW {ano}: OK (urlTemplate)")
+        else:
+                            st.markdown(f"   ❌ GSW {ano}: No se pudo obtener URL de tiles")
                     else:
-                        with debug_container:
-                            st.warning(f"⚠️ **Sin imagen GSW** para {ano}")
-                            
-                else:
-                    # Sentinel-2 para 2020+
-                    with debug_container:
-                        st.markdown(f"🛰️ **Fuente**: Sentinel-2 NDWI")
-                    
+                        st.markdown(f"   ⚪ GSW {ano}: Sin imagen disponible")
+                
+                elif ano >= 2020:
+                    # USAR SENTINEL-2 NDWI para años 2020-2025
                     fecha_inicio = f"{ano}-01-01"
-                    fecha_fin = f"{ano}-12-31"
+                    fecha_fin = f"{ano}-12-31" if ano < 2025 else "2025-04-30"
                     
-                    s2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
+                    s2_collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
                         .filterDate(fecha_inicio, fecha_fin) \
                         .filterBounds(geometry) \
-                        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50))
+                        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 70))
                     
-                    count = s2.size().getInfo()
+                    num_images = s2_collection.size().getInfo()
+                    st.markdown(f"   🛰️ S2 {ano}: {num_images} imágenes encontradas")
                     
-                    with debug_container:
-                        if count > 0:
-                            st.success(f"📊 **{count} imágenes S2** encontradas para {ano}")
-                        else:
-                            st.warning(f"📊 **0 imágenes S2** para {ano}")
-                    
-                    if count > 0:
-                        # Función NDWI original
+                    if num_images > 0:
+                        # Función para calcular NDWI
                         def add_ndwi(image):
                             ndwi = image.normalizedDifference(['B3', 'B8']).rename('NDWI')
                             # Máscara de nubes
@@ -1979,136 +1900,57 @@ def crear_tiles_inundacion_por_ano(geometry, anos_completos):
                                 else ee.Image(1)
                             return image.addBands(ndwi).updateMask(cloud_mask)
                         
-                        # Aplicar NDWI y obtener máximo anual (fórmula original)
-                        s2_ndwi = s2.map(add_ndwi)
+                        # Aplicar NDWI y obtener máximo anual
+                        s2_ndwi = s2_collection.map(add_ndwi)
                         ndwi_max = s2_ndwi.select('NDWI').max()
                         
-                        with debug_container:
-                            st.info(f"🔧 **NDWI máximo** calculado correctamente")
+                        # Crear máscara de agua (NDWI > 0.1)
+                        water_mask = ndwi_max.gt(0.1).multiply(255)
                         
-                        # Máscara de agua (NDWI > 0.1 - umbral original)
-                        water_mask = ndwi_max.gt(0.1)
-                        
-                        with debug_container:
-                            st.info(f"🔧 **Máscara S2** creada (NDWI > 0.1)")
-                        
-                        # Clipear al área
+                        # Clipear al AOI
                         water_clipped = water_mask.clip(geometry)
                         
-                        with debug_container:
-                            st.info(f"✂️ **S2 clipeada** al área de interés")
-                        
-                        # Visualización azul
+                        # Crear tiles con píxeles azules
                         vis_params = {
                             'min': 0,
-                            'max': 1,
-                            'palette': ['transparent', '#0066FF']
+                            'max': 255,
+                            'palette': ['transparent', '#0066ff']  # Transparente y azul
                         }
                         
-                        with debug_container:
-                            st.code(f"Parámetros S2: {vis_params}")
+                        map_id = water_clipped.getMapId(vis_params)
                         
-                        # Obtener tiles con debug persistente
-                        try:
-                            with debug_container:
-                                st.markdown(f"🔄 **Obteniendo mapId S2...**")
-                            
-                            map_id = water_clipped.getMapId(vis_params)
-                            
-                            with debug_container:
-                                st.success(f"✅ **MapId S2** obtenido: `{type(map_id)}`")
-                                st.json({"Keys S2 disponibles": list(map_id.keys())})
-                            
-                            # Intentar múltiples formas de obtener URL
-                            url_obtenida = None
-                            
-                            if hasattr(map_id, 'tile_fetcher') and hasattr(map_id.tile_fetcher, 'url_template'):
-                                url_obtenida = map_id.tile_fetcher.url_template
-                                with debug_container:
-                                    st.success(f"✅ **S2 Método 1**: {url_obtenida[:50]}...")
-                            elif 'tile_fetcher' in map_id and 'url_template' in map_id['tile_fetcher']:
-                                url_obtenida = map_id['tile_fetcher']['url_template']
-                                with debug_container:
-                                    st.success(f"✅ **S2 Método 2**: {url_obtenida[:50]}...")
-                            elif 'urlTemplate' in map_id:
-                                url_obtenida = map_id['urlTemplate']
-                                with debug_container:
-                                    st.success(f"✅ **S2 Método 3**: {url_obtenida[:50]}...")
-                            else:
-                                with debug_container:
-                                    st.error(f"❌ **S2 fallo**: No se pudo obtener URL")
-                                    st.json({"Estructura S2": str(map_id)})
-                            
-                            if url_obtenida:
-                                tiles_urls[ano] = url_obtenida
-                                with debug_container:
-                                    st.balloons()  # Celebración visual
-                                    st.success(f"🎉 **S2 {ano} EXITOSO** - {count} imágenes procesadas")
-                            else:
-                                with debug_container:
-                                    st.error(f"❌ **S2 {ano} FALLÓ** - No se pudo obtener URL")
-                                
-                        except Exception as e:
-                            with debug_container:
-                                st.error(f"❌ **Excepción S2 {ano}**: `{e}`")
-                                with st.expander(f"🔍 Traceback S2 {ano}"):
-                                    import traceback
-                                    st.code(traceback.format_exc())
+                        # Obtener URL de tiles
+                        if hasattr(map_id, 'tile_fetcher') and hasattr(map_id.tile_fetcher, 'url_template'):
+                            tiles_urls[ano] = map_id.tile_fetcher.url_template
+                            st.markdown(f"   ✅ Tiles S2 {ano}: OK")
+                        elif 'tile_fetcher' in map_id and hasattr(map_id['tile_fetcher'], 'url_template'):
+                            tiles_urls[ano] = map_id['tile_fetcher'].url_template
+                            st.markdown(f"   ✅ Tiles S2 {ano}: OK (dict)")
+                        elif 'urlTemplate' in map_id:
+                            tiles_urls[ano] = map_id['urlTemplate']
+                            st.markdown(f"   ✅ Tiles S2 {ano}: OK (urlTemplate)")
+                        else:
+                            st.markdown(f"   ❌ S2 {ano}: No se pudo obtener URL de tiles")
                     else:
-                        with debug_container:
-                            st.info(f"ℹ️ **Sin imágenes S2** para {ano}")
-                        
-                with debug_container:
-                    st.markdown("---")
-                        
+                        st.markdown(f"   ⚪ S2 {ano}: Sin imágenes disponibles")
+                            
             except Exception as e:
-                with debug_container:
-                    st.error(f"❌ **Error procesando año {ano}**: `{e}`")
-                    with st.expander(f"🔍 Traceback año {ano}"):
-                        import traceback
-                        st.code(traceback.format_exc())
+                # Si falla un año individual, continuar con los demás
+                st.markdown(f"   ❌ Error en año {ano}: {str(e)}")
                 continue
         
-        # RESUMEN FINAL PERSISTENTE
-        with debug_container:
-            st.markdown("---")
-            st.markdown("## 📋 **RESUMEN FINAL**")
-            
-            if tiles_urls:
-                st.success(f"🎉 **{len(tiles_urls)} tiles de inundación generados exitosamente**")
-                st.json({"Años exitosos": list(tiles_urls.keys())})
-                
-                # Mostrar URLs (primeros 50 chars)
-                for ano, url in tiles_urls.items():
-                    st.markdown(f"**{ano}**: `{url[:50]}...`")
-            else:
-                st.error(f"❌ **NO se generaron tiles de inundación**")
-                st.markdown("**Posibles causas:**")
-                st.markdown("- Sin imágenes disponibles para los años seleccionados")
-                st.markdown("- Error en la autenticación de Earth Engine")
-                st.markdown("- Área de interés fuera de cobertura")
-                st.markdown("- Problema de conectividad")
-            
-        with progress_container:
-            if tiles_urls:
-                st.success("✅ Generación de tiles completada")
-            else:
-                st.error("❌ Generación de tiles falló")
-            
+        st.success(f"🎉 **Tiles generados**: {len(tiles_urls)} años procesados")
         return tiles_urls
         
     except Exception as e:
-        with debug_container:
-            st.error(f"❌ **Error general generando tiles**: `{e}`")
-            with st.expander("🔍 Traceback general"):
-                import traceback
-                st.code(traceback.format_exc())
+        # Si falla completamente, retornar diccionario vacío
+        st.error(f"❌ Error generando tiles: {str(e)}")
         return {}
 
 def crear_mapa_inundacion_con_tiles(aoi, tiles_inundacion, df_inundacion, ano_seleccionado):
     """
     Crea un mapa interactivo con tiles reales de Google Earth Engine para inundación
-    VERSIÓN MEJORADA que siempre muestra algo útil
+    Similar a crear_mapa_con_tiles_engine pero para píxeles azules de agua
     """
     import folium
     
@@ -2142,82 +1984,48 @@ def crear_mapa_inundacion_con_tiles(aoi, tiles_inundacion, df_inundacion, ano_se
         control=True
     ).add_to(m)
     
-    # Estado de tiles para mostrar en la leyenda
-    tiles_disponibles = ano_seleccionado in tiles_inundacion
-    
-    # Agregar tiles de Earth Engine para el año seleccionado (si están disponibles)
-    if tiles_disponibles:
+    # Agregar tiles de Earth Engine para el año seleccionado
+    if ano_seleccionado in tiles_inundacion:
         tile_url = tiles_inundacion[ano_seleccionado]
         
-        # Múltiples niveles de transparencia para inundación - TODAS OVERLAY=True
         folium.raster_layers.TileLayer(
             tiles=tile_url,
             attr='Google Earth Engine',
-            name=f'🌊 Inundación {ano_seleccionado} (100%)',
-            overlay=True,  # ✅ OVERLAY=True permite múltiples selecciones
+            name=f'Inundación {ano_seleccionado}',
+            overlay=True,
             control=True,
-            opacity=1.0,
-            show=False  # NO activo por defecto
-        ).add_to(m)
-        
-        folium.raster_layers.TileLayer(
-            tiles=tile_url,
-            attr='Google Earth Engine',
-            name=f'🌊 Inundación {ano_seleccionado} (80%)',
-            overlay=True,  # ✅ OVERLAY=True permite múltiples selecciones
-            control=True,
-            opacity=0.8,
-            show=True  # ✅ ACTIVO por defecto
-        ).add_to(m)
-        
-        folium.raster_layers.TileLayer(
-            tiles=tile_url,
-            attr='Google Earth Engine',
-            name=f'🌊 Inundación {ano_seleccionado} (50%)',
-            overlay=True,  # ✅ OVERLAY=True permite múltiples selecciones
-            control=True,
-            opacity=0.5,
-            show=False  # NO activo por defecto
+            opacity=0.8
         ).add_to(m)
     
-    # Agregar contorno del AOI SIEMPRE
+    # Agregar contorno del AOI
     try:
         aoi_geojson = aoi.getInfo()
         folium.GeoJson(
             aoi_geojson,
             name="Límite del Campo",
             style_function=lambda x: {
-                "fillColor": "lightblue" if tiles_disponibles else "orange",
+                "fillColor": "transparent",
                 "color": "red", 
                 "weight": 3,
-                "fillOpacity": 0.2 if tiles_disponibles else 0.1
+                "fillOpacity": 0
             }
         ).add_to(m)
     except Exception as e:
-        # Si falla el GeoJson, al menos agregar un marcador
-        folium.Marker(
-            [center_lat, center_lon],
-            popup=f"Centro del área analizada - Año {ano_seleccionado}",
-            tooltip="Área de análisis",
-            icon=folium.Icon(color='blue', icon='info-sign')
-        ).add_to(m)
+        pass
     
-    # Crear leyenda de inundación SIEMPRE
-    df_ano = df_inundacion[df_inundacion['Año'] == ano_seleccionado] if not df_inundacion.empty else None
+    # Crear leyenda de inundación
+    df_ano = df_inundacion[df_inundacion['Año'] == ano_seleccionado]
     
-    if df_ano is not None and not df_ano.empty:
+    if not df_ano.empty:
         area_inundada = df_ano.iloc[0]['Área Inundada (ha)']
         porcentaje = df_ano.iloc[0]['Porcentaje Inundación']
         sensor = df_ano.iloc[0]['Sensor']
         area_total = df_ano.iloc[0]['Área Total (ha)']
         
-        # Estado de tiles para mostrar en la leyenda
-        estado_tiles = "✅ Píxeles azules activos" if tiles_disponibles else "❌ Sin tiles (solo datos)"
-        
         # Crear leyenda HTML
         legend_html = f"""
         <div style="position: fixed; 
-                    bottom: 50px; right: 50px; width: 300px;
+                    bottom: 50px; right: 50px; width: 280px;
                     background-color: white; z-index:9999; 
                     border: 2px solid #333; border-radius: 8px;
                     padding: 15px; font-family: Arial, sans-serif;
@@ -2243,46 +2051,6 @@ def crear_mapa_inundacion_con_tiles(aoi, tiles_inundacion, df_inundacion, ano_se
             <strong>Porcentaje:</strong> {porcentaje:.1f}%<br>
             <strong>Área Total:</strong> {area_total:.1f} ha<br>
             <strong>Sensor:</strong> {sensor}
-        </div>
-        
-        <div style="margin: 10px 0; font-size: 11px; color: #666;">
-            <strong>Estado Tiles:</strong> {estado_tiles}
-        </div>
-        
-        <div style="margin-top: 15px; padding-top: 10px; 
-                    border-top: 1px solid #ccc; font-size: 11px; 
-                    color: #666; text-align: center;">
-            🌊 Análisis de Riesgo Hídrico<br>
-            Google Earth Engine
-        </div>
-        </div>
-        """
-        
-        m.get_root().html.add_child(folium.Element(legend_html))
-    
-    else:
-        # Leyenda básica si no hay datos
-        legend_html = f"""
-        <div style="position: fixed; 
-                    bottom: 50px; right: 50px; width: 280px;
-                    background-color: white; z-index:9999; 
-                    border: 2px solid #333; border-radius: 8px;
-                    padding: 15px; font-family: Arial, sans-serif;
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.3);">
-                    
-        <h3 style="margin: 0 0 15px 0; text-align: center; 
-                   background-color: #ff6600; color: white; 
-                   padding: 8px; border-radius: 4px;">
-            Año {ano_seleccionado}
-        </h3>
-        
-        <div style="margin: 10px 0; font-size: 12px; text-align: center;">
-            <strong>⚠️ Sin datos de inundación</strong><br>
-            para este año
-        </div>
-        
-        <div style="margin: 10px 0; font-size: 11px; color: #666;">
-            <strong>Estado Tiles:</strong> {"✅ Disponibles" if tiles_disponibles else "❌ No generados"}
         </div>
         
         <div style="margin-top: 15px; padding-top: 10px; 
@@ -2319,13 +2087,11 @@ def crear_mapa_riesgo_basico(geometry, resultados_por_ano, area_aoi):
         except:
             center_lat, center_lon = -34.0, -60.0  # Fallback Argentina
         
-        # Crear mapa base MÁS GRANDE
+        # Crear mapa base
         m = folium.Map(
             location=[center_lat, center_lon],
             zoom_start=13,
-            tiles="OpenStreetMap",
-            width='100%',
-            height='600px'  # Altura fija más grande
+            tiles="OpenStreetMap"
         )
         
         # Agregar área analizada como polígono azul
@@ -2433,8 +2199,8 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
         # FASE 1: ANÁLISIS CON JRC GLOBAL SURFACE WATER (1984-2019)
         st.markdown("### 🌍 **Fase 1: JRC Global Surface Water (1984-2019)**")
         
-        # Cargar dataset GSW - ACTUALIZADO A LA NUEVA VERSIÓN  
-        gsw = ee.ImageCollection("JRC/GSW1_4/YearlyHistory")
+        # Cargar dataset GSW
+        gsw = ee.ImageCollection("JRC/GSW1_3/YearlyHistory")
         
         # DEBUG: Mostrar años que van a GSW vs Sentinel-2
         anos_gsw = [ano for ano in anos_completos if ano <= 2019]
@@ -2576,7 +2342,7 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
 def analizar_gsw_ano(geometry, ano, gsw):
     """
     Analiza un año específico con JRC Global Surface Water
-    VERSIÓN SIMPLIFICADA Y ROBUSTA
+    Metodología: GSW valor 2 = agua permanente/estacional
     """
     try:
         # Filtrar GSW por año
@@ -2584,61 +2350,54 @@ def analizar_gsw_ano(geometry, ano, gsw):
         
         # Verificar si hay imagen
         if not year_img:
-            return {
-                'area_inundada': 0,
-                'porcentaje': 0,
-                'sensor': 'JRC GSW (sin datos)',
-                'imagenes': 0
-            }
+            return None
         
-        # Crear máscara para áreas con agua (valor 2 = agua permanente, valor 1 = estacional)
-        water_mask = year_img.eq(2).Or(year_img.eq(1))
+        # Crear máscara para áreas con agua (valor 2 = agua)
+        water_mask = year_img.eq(2)
         
-        # Calcular área total del AOI
-        area_total = geometry.area(maxError=1).divide(10000).getInfo()
+        # Calcular área en hectáreas
+        area_inundada = water_mask.multiply(ee.Image.pixelArea()).divide(10000) \
+            .reduceRegion(
+                reducer=ee.Reducer.sum(),
+                geometry=geometry,
+                scale=30,
+                maxPixels=1e9
+            ).getInfo()
         
-        # Calcular área inundada usando pixelArea
-        area_inundada_img = water_mask.multiply(ee.Image.pixelArea()).divide(10000)
-        
-        # Usar reduceRegion con parámetros conservadores
-        area_stats = area_inundada_img.reduceRegion(
-            reducer=ee.Reducer.sum(),
-            geometry=geometry,
-            scale=30,
-            maxPixels=1e9,
-            bestEffort=True
-        ).getInfo()
-        
-        # Extraer área inundada de manera robusta
+        # Obtener el valor del área (puede estar en diferentes keys)
         area_ha = 0
-        if area_stats:
-            # Buscar el valor en las posibles keys
-            for key in ['constant', 'sum', 'b1', 'classification']:
-                if key in area_stats and area_stats[key] is not None:
-                    area_ha = max(area_ha, area_stats[key])
+        for key in area_inundada.keys():
+            if area_inundada[key] and area_inundada[key] > 0:
+                area_ha = area_inundada[key]
+                break
         
         # Calcular porcentaje
+        area_total = geometry.area(maxError=1).divide(10000).getInfo()
         porcentaje = (area_ha / area_total * 100) if area_total > 0 else 0
+        
+        # Mostrar resultado
+        if area_ha > 0:
+            # Resultado ya se muestra en función principal
+            pass
+        else:
+            # Resultado ya se muestra en función principal
+            pass
         
         return {
             'area_inundada': area_ha,
             'porcentaje': porcentaje,
-            'sensor': 'JRC GSW',
-            'imagenes': 1
+            'sensor': 'JRC Global Surface Water',
+            'imagenes': 1  # GSW es un producto anual
         }
         
     except Exception as e:
-        return {
-            'area_inundada': 0,
-            'porcentaje': 0,
-            'sensor': 'JRC GSW (error)',
-            'imagenes': 0
-        }
+        st.error(f"❌ Error GSW {ano}: {str(e)}")
+        return None
 
 def analizar_sentinel2_ndwi_ano(geometry, ano):
     """
     Analiza un año específico con Sentinel-2 NDWI
-    VERSIÓN SIMPLIFICADA Y ROBUSTA
+    Metodología: NDWI > 0.1 (umbral científico validado)
     """
     try:
         # Definir fechas
@@ -2652,7 +2411,7 @@ def analizar_sentinel2_ndwi_ano(geometry, ano):
         s2_collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
             .filterDate(fecha_inicio, fecha_fin) \
             .filterBounds(geometry) \
-            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50))
+            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 70))
         
         # Contar imágenes
         num_imagenes = s2_collection.size().getInfo()
@@ -2662,63 +2421,67 @@ def analizar_sentinel2_ndwi_ano(geometry, ano):
             s2_collection = ee.ImageCollection('COPERNICUS/S2_SR') \
                 .filterDate(fecha_inicio, fecha_fin) \
                 .filterBounds(geometry) \
-                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50))
+                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 70))
             
             num_imagenes = s2_collection.size().getInfo()
         
         if num_imagenes == 0:
-            return {
-                'area_inundada': 0,
-                'porcentaje': 0,
-                'sensor': 'Sentinel-2 (sin datos)',
-                'imagenes': 0
-            }
+            st.markdown(f"⚠️ S2 {ano}: Sin imágenes disponibles")
+            return None
         
-        # Función para calcular NDWI simplificada
+        # Función para calcular NDWI y aplicar máscara de nubes
         def add_ndwi(image):
             # Calcular NDWI: (Green - NIR) / (Green + NIR)
             ndwi = image.normalizedDifference(['B3', 'B8']).rename('NDWI')
             
-            # Máscara de nubes básica
-            try:
+            # Máscara de nubes adaptada
+            band_names = image.bandNames()
+            has_qa60 = band_names.contains('QA60')
+            has_msk_cldprb = band_names.contains('MSK_CLDPRB')
+            
+            if has_qa60:
+                # Formato antiguo: usar QA60
                 cloud_mask = image.select('QA60').bitwiseAnd(1 << 10).eq(0)
-            except:
-                cloud_mask = ee.Image(1)  # Sin máscara si falla
+            elif has_msk_cldprb:
+                # Formato nuevo: usar probabilidad de nubes
+                cloud_mask = image.select('MSK_CLDPRB').lt(50)
+            else:
+                # Sin máscara de nubes
+                cloud_mask = ee.Image(1)
             
             return image.addBands(ndwi).updateMask(cloud_mask)
         
         # Aplicar función a la colección
         s2_ndwi = s2_collection.map(add_ndwi)
         
-        # Calcular composición anual (mediana para ser más conservador)
-        ndwi_median = s2_ndwi.select('NDWI').median()
+        # Calcular composición anual (máximo NDWI)
+        ndwi_max = s2_ndwi.select('NDWI').max()
         
         # Crear máscara de agua usando umbral científico
-        water_mask = ndwi_median.gt(0.2)  # Umbral más conservador
+        water_mask = ndwi_max.gt(0.1)
         
-        # Calcular área total del AOI
-        area_total = geometry.area(maxError=1).divide(10000).getInfo()
+        # Calcular área en hectáreas
+        area_inundada = water_mask.multiply(ee.Image.pixelArea()).divide(10000) \
+            .reduceRegion(
+                reducer=ee.Reducer.sum(),
+                geometry=geometry,
+                scale=10,  # Resolución Sentinel-2
+                maxPixels=1e9
+            ).getInfo()
         
-        # Calcular área inundada
-        area_inundada_img = water_mask.multiply(ee.Image.pixelArea()).divide(10000)
-        
-        area_stats = area_inundada_img.reduceRegion(
-            reducer=ee.Reducer.sum(),
-            geometry=geometry,
-            scale=20,  # Resolución más conservadora
-            maxPixels=1e9,
-            bestEffort=True
-        ).getInfo()
-        
-        # Extraer área inundada de manera robusta
-        area_ha = 0
-        if area_stats:
-            for key in ['NDWI', 'constant', 'sum', 'b1']:
-                if key in area_stats and area_stats[key] is not None:
-                    area_ha = max(area_ha, area_stats[key])
+        area_ha = area_inundada.get('NDWI', 0)
         
         # Calcular porcentaje
+        area_total = geometry.area(maxError=1).divide(10000).getInfo()
         porcentaje = (area_ha / area_total * 100) if area_total > 0 else 0
+        
+        # Mostrar resultado
+        if area_ha > 0:
+            # Resultado ya se muestra en función principal
+            pass
+        else:
+            # Resultado ya se muestra en función principal
+            pass
         
         return {
             'area_inundada': area_ha,
@@ -2728,12 +2491,8 @@ def analizar_sentinel2_ndwi_ano(geometry, ano):
         }
         
     except Exception as e:
-        return {
-            'area_inundada': 0,
-            'porcentaje': 0,
-            'sensor': 'Sentinel-2 (error)',
-            'imagenes': 0
-        }
+        st.error(f"❌ Error S2 {ano}: {str(e)}")
+        return None
 
 def main():
     # Logo VISU con tagline correcto - DISEÑO ELEGANTE QUE YA FUNCIONA
@@ -3392,10 +3151,10 @@ def mostrar_analisis_cultivos_cuit():
                         # 🌾 ANÁLISIS GENERAL (ORIGINAL)
                         # Crear AOI
                         aoi = crear_ee_feature_collection_web(poligonos_data)
-                        if not aoi:
-                            st.error("❌ No se pudo crear el área de interés")
-                            return
-                        
+                if not aoi:
+                    st.error("❌ No se pudo crear el área de interés")
+                    return
+                
                         # Ejecutar análisis
                         with st.spinner("🔄 Ejecutando análisis general de cultivos..."):
                             resultado = analizar_cultivos_web(aoi)
@@ -3406,8 +3165,8 @@ def mostrar_analisis_cultivos_cuit():
                                 df_cultivos, area_total = resultado[:2]
                                 tiles_urls = {}
                                 cultivos_por_campana = {}
-                            
-                            if df_cultivos is not None and not df_cultivos.empty:
+                
+                if df_cultivos is not None and not df_cultivos.empty:
                                 # GUARDAR TODO EN SESSION STATE
                                 st.session_state.resultados_analisis = {
                                     'tipo': 'general',
@@ -3606,8 +3365,8 @@ def mostrar_resultados_analisis():
         
         # Métricas generales
         st.markdown('<div class="metric-container">', unsafe_allow_html=True)
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
             st.metric("Campos Analizados", f"{datos['total_campos']:,}")
         with col2:
             st.metric("Superficie Total", f"{datos['superficie_total']:,.1f} ha")
@@ -3675,30 +3434,30 @@ def mostrar_resultados_analisis():
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Área Analizada", f"{area_total:,.1f} ha")
-    with col2:
-        cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
+                    with col2:
+                        cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
         st.metric("Cultivos Detectados", f"{cultivos_detectados:,}")
-    with col3:
-        area_agricola_por_campana = df_cultivos[~df_cultivos['Cultivo'].str.contains('No agrícola', na=False)].groupby('Campaña')['Área (ha)'].sum()
-        area_agricola = area_agricola_por_campana.mean()
+                    with col3:
+                        area_agricola_por_campana = df_cultivos[~df_cultivos['Cultivo'].str.contains('No agrícola', na=False)].groupby('Campaña')['Área (ha)'].sum()
+                        area_agricola = area_agricola_por_campana.mean()
         st.metric("Área Agrícola", f"{area_agricola:,.1f} ha", help="Promedio de área agrícola por campaña")
-    with col4:
-        porcentaje_agricola = (area_agricola / area_total * 100) if area_total > 0 else 0
-        st.metric("% Agrícola", f"{porcentaje_agricola:.1f}%", help="Porcentaje promedio de área agrícola")
+                    with col4:
+                        porcentaje_agricola = (area_agricola / area_total * 100) if area_total > 0 else 0
+                        st.metric("% Agrícola", f"{porcentaje_agricola:.1f}%", help="Porcentaje promedio de área agrícola")
     st.markdown('</div>', unsafe_allow_html=True)
-    
+                    
     # Generar gráfico de rotación
-    fig, df_rotacion = generar_grafico_rotacion_web(df_cultivos)
-    
-    if fig is not None:
-        st.subheader("🎨 Gráfico de Rotación de Cultivos")
-        st.pyplot(fig)
-        
-        st.subheader("📋 Tabla de Rotación (%)")
-        df_display = df_rotacion.copy()
-        df_display = df_display.rename(columns={'Cultivo_Estandarizado': 'Cultivo'})
-        st.dataframe(df_display, use_container_width=True)
-    
+                    fig, df_rotacion = generar_grafico_rotacion_web(df_cultivos)
+                    
+                    if fig is not None:
+                        st.subheader("🎨 Gráfico de Rotación de Cultivos")
+                        st.pyplot(fig)
+                        
+                        st.subheader("📋 Tabla de Rotación (%)")
+                        df_display = df_rotacion.copy()
+                        df_display = df_display.rename(columns={'Cultivo_Estandarizado': 'Cultivo'})
+                        st.dataframe(df_display, use_container_width=True)
+                        
     # MAPA INTERACTIVO PERSISTENTE
     st.subheader("🗺️ Mapa Interactivo de Cultivos")
     st.write("Explora los píxeles de cultivos reales de Google Earth Engine:")
@@ -3757,14 +3516,14 @@ def mostrar_resultados_analisis():
             # Fallback al visor anterior
             mapa_cultivos = crear_visor_cultivos_interactivo(aoi, df_cultivos)
             map_data = st_folium(mapa_cultivos, width=None, height=500, key="mapa_fallback")
-    
-    except Exception as e:
+                            
+                        except Exception as e:
         st.error(f"Error generando el mapa: {e}")
         st.info("El análisis se completó correctamente, pero no se pudo mostrar el mapa con tiles.")
     
     # DESCARGAS MEJORADAS CON KMZ PARA CUIT
     st.markdown("---")
-    st.subheader("💾 Descargar Resultados")
+                        st.subheader("💾 Descargar Resultados")
     st.write("Descarga los resultados del análisis en diferentes formatos:")
     
     # Crear nombre base para archivos
@@ -3775,23 +3534,23 @@ def mostrar_resultados_analisis():
         nombre_base = nombre_base[:50]
     
     # CSVs
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename_hectareas = f"{nombre_base}_hectareas_{timestamp}.csv"
         download_link_hectareas = get_download_link(df_cultivos, filename_hectareas, "📊 CSV - Hectáreas")
         st.markdown(download_link_hectareas, unsafe_allow_html=True)
         st.caption("📄 Cultivo, Campaña, Área")
-    
-    with col2:
+                        
+                        with col2:
         filename_porcentajes = f"{nombre_base}_porcentajes_{timestamp}.csv"
         download_link_porcentajes = get_download_link(df_display, filename_porcentajes, "🔄 CSV - Rotación")
         st.markdown(download_link_porcentajes, unsafe_allow_html=True)
         st.caption("📄 Porcentajes por campaña")
     
     # KMZ para análisis por CUIT
-    with col3:
+                        with col3:
         if fuente in ['CUIT', 'CUIT_INDIVIDUAL'] and 'poligonos_data' in datos:
             filename_kmz = f"{nombre_base}_campos_{timestamp}.kmz"
             kmz_buffer = generar_kmz_desde_cuit(datos['poligonos_data'], nombre_base)
@@ -3823,18 +3582,18 @@ def mostrar_resultados_analisis():
                 st.caption("📄 Campo seleccionado")
     
     # RESUMEN FINAL PERSISTENTE
-    st.subheader("📈 Resumen por Campaña")
-    pivot_summary = df_cultivos.pivot_table(
-        index='Cultivo', 
-        columns='Campaña', 
-        values='Área (ha)', 
-        aggfunc='sum', 
-        fill_value=0
-    )
+                        st.subheader("📈 Resumen por Campaña")
+                        pivot_summary = df_cultivos.pivot_table(
+                            index='Cultivo', 
+                            columns='Campaña', 
+                            values='Área (ha)', 
+                            aggfunc='sum', 
+                            fill_value=0
+                        )
     pivot_summary['Promedio'] = pivot_summary.mean(axis=1).round(1)
     pivot_filtered = pivot_summary[pivot_summary['Promedio'] > 0].sort_values('Promedio', ascending=False)
-    st.dataframe(pivot_filtered, use_container_width=True)
-    
+                        st.dataframe(pivot_filtered, use_container_width=True)
+                        
     # Mensaje final
     st.markdown("---")
     st.success("✅ **Todos los resultados están listos y disponibles para descarga**")
@@ -3857,7 +3616,7 @@ def mostrar_resultados_analisis():
                     key="download_pdf_cultivos"
                 )
                 st.success("✅ PDF generado exitosamente!")
-            else:
+                else:
                 st.error("❌ Error generando el PDF")
     
     # Botón para limpiar resultados (DESPUÉS del PDF)
@@ -4030,7 +3789,7 @@ def mostrar_resultados_inundacion():
                     
                     # Explicación del mapa
                     with st.expander("💡 Cómo interpretar el mapa"):
-                        st.markdown("""
+    st.markdown("""
                         **🔵 Píxeles azules**: Áreas donde se detectó agua durante el año seleccionado  
                         **🗓️ Cambiar año**: Usa el dropdown arriba para ver otros años  
                         **🔍 Zoom**: Acerca/aleja para ver más detalle de los píxeles  
@@ -4167,6 +3926,8 @@ def generar_reporte_pdf_cultivos(datos, df_resultados, aoi):
     Páginas 2+: Una campaña por página con mapa real de píxeles
     """
     try:
+        print("🔄 DEBUG: Ejecutando función PDF NUEVA con capturas reales...")
+        st.info("🔄 DEBUG: Ejecutando función PDF NUEVA con capturas reales...")
         import matplotlib.pyplot as plt
         from matplotlib.backends.backend_pdf import PdfPages
         import io
@@ -4178,7 +3939,7 @@ def generar_reporte_pdf_cultivos(datos, df_resultados, aoi):
         # Buffer para el PDF
         pdf_buffer = io.BytesIO()
         
-        # Obtener datos necesarios - CORREGIDO
+        # Obtener datos necesarios
         df_cultivos = df_resultados
         tiles_urls = datos.get('tiles_urls', {})
         
@@ -4188,6 +3949,7 @@ def generar_reporte_pdf_cultivos(datos, df_resultados, aoi):
             ax.axis('off')
             
             # Título principal
+            print("🔄 DEBUG: Creando página 1 con resumen estadístico...")
             ax.text(0.5, 0.95, 'REPORTE DE ANÁLISIS DE CULTIVOS', 
                    ha='center', va='top', fontsize=24, fontweight='bold', 
                    transform=ax.transAxes)
@@ -4202,15 +3964,15 @@ def generar_reporte_pdf_cultivos(datos, df_resultados, aoi):
                    ha='center', va='top', fontsize=12, 
                    transform=ax.transAxes)
             
-            # ESTADÍSTICAS PRINCIPALES (como pidió el usuario) - CORREGIDO
-            area_total = df_cultivos['Área (ha)'].sum() / len(df_cultivos['Campaña'].unique())
+            # ESTADÍSTICAS PRINCIPALES (como pidió el usuario)
+            area_total = df_cultivos.groupby('Campaña')['Área (ha)'].sum().iloc[0]
             
             # Calcular áreas agrícolas promedio, máximas, totales y no agrícolas
             area_agricola_por_campana = df_cultivos[~df_cultivos['Cultivo'].str.contains('No agrícola', na=False)].groupby('Campaña')['Área (ha)'].sum()
             area_no_agricola_por_campana = df_cultivos[df_cultivos['Cultivo'].str.contains('No agrícola', na=False)].groupby('Campaña')['Área (ha)'].sum()
             
-            area_agricola_promedio = area_agricola_por_campana.mean() if not area_agricola_por_campana.empty else 0
-            area_agricola_maxima = area_agricola_por_campana.max() if not area_agricola_por_campana.empty else 0
+            area_agricola_promedio = area_agricola_por_campana.mean()
+            area_agricola_maxima = area_agricola_por_campana.max()
             area_no_agricola_promedio = area_no_agricola_por_campana.mean() if not area_no_agricola_por_campana.empty else 0
             
             cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
@@ -4245,53 +4007,47 @@ def generar_reporte_pdf_cultivos(datos, df_resultados, aoi):
                    ha='center', va='top', fontsize=16, fontweight='bold',
                    transform=ax.transAxes)
             
-            # Crear tabla compacta - CORREGIDO
-            try:
-                pivot_summary = df_cultivos.pivot_table(
-                    index='Cultivo', 
-                    columns='Campaña', 
-                    values='Área (ha)', 
-                    aggfunc='sum', 
-                    fill_value=0
-                )
-                pivot_summary['Promedio'] = pivot_summary.mean(axis=1).round(1)
-                pivot_filtered = pivot_summary[pivot_summary['Promedio'] > 0].sort_values('Promedio', ascending=False)
-                
-                # Preparar datos para tabla compacta
-                table_data = []
-                headers = ['Cultivo'] + [str(col) for col in pivot_filtered.columns]
-                
-                for cultivo, row in pivot_filtered.iterrows():
-                    row_data = [cultivo] + [f"{val:.0f}" for val in row]  # Sin decimales para compactar
-                    table_data.append(row_data)
-                
-                # Crear tabla más pequeña
-                table = ax.table(cellText=table_data, colLabels=headers, 
-                               cellLoc='center', loc='center', 
-                               bbox=[0.05, 0.05, 0.9, 0.25])
-                table.auto_set_font_size(False)
-                table.set_fontsize(8)
-                table.scale(1, 1.5)
-                
-                # Colorear encabezados
-                for i in range(len(headers)):
-                    table[(0, i)].set_facecolor('#4CAF50')
-                    table[(0, i)].set_text_props(weight='bold', color='white')
-                    
-            except Exception as e:
-                # Si falla la tabla, mostrar resumen simple
-                ax.text(0.5, 0.2, f'Error generando tabla: {e}', 
-                       ha='center', va='center', fontsize=12, 
-                       transform=ax.transAxes,
-                       bbox=dict(boxstyle="round,pad=0.5", facecolor="lightyellow", alpha=0.8))
+            # Crear tabla compacta
+            pivot_summary = df_cultivos.pivot_table(
+                index='Cultivo', 
+                columns='Campaña', 
+                values='Área (ha)', 
+                aggfunc='sum', 
+                fill_value=0
+            )
+            pivot_summary['Promedio'] = pivot_summary.mean(axis=1).round(1)
+            pivot_filtered = pivot_summary[pivot_summary['Promedio'] > 0].sort_values('Promedio', ascending=False)
+            
+            # Preparar datos para tabla compacta
+            table_data = []
+            headers = ['Cultivo'] + [str(col) for col in pivot_filtered.columns]
+            
+            for cultivo, row in pivot_filtered.iterrows():
+                row_data = [cultivo] + [f"{val:.0f}" for val in row]  # Sin decimales para compactar
+                table_data.append(row_data)
+            
+            # Crear tabla más pequeña
+            table = ax.table(cellText=table_data, colLabels=headers, 
+                           cellLoc='center', loc='center', 
+                           bbox=[0.05, 0.05, 0.9, 0.25])
+            table.auto_set_font_size(False)
+            table.set_fontsize(8)
+            table.scale(1, 1.5)
+            
+            # Colorear encabezados
+            for i in range(len(headers)):
+                table[(0, i)].set_facecolor('#4CAF50')
+                table[(0, i)].set_text_props(weight='bold', color='white')
             
             pdf.savefig(fig, bbox_inches='tight')
             plt.close(fig)
             
             # PÁGINAS 2+: UNA CAMPAÑA POR PÁGINA CON MAPA REAL
             campanas = sorted(df_cultivos['Campaña'].unique())
+            print(f"🔄 DEBUG: Creando {len(campanas)} páginas individuales para campañas: {campanas}")
             
             for campana in campanas:
+                print(f"🔄 DEBUG: Creando página para campaña {campana}...")
                 fig, (ax_map, ax_info) = plt.subplots(1, 2, figsize=(16, 10), 
                                                      gridspec_kw={'width_ratios': [3, 1]})
                 
@@ -4302,22 +4058,27 @@ def generar_reporte_pdf_cultivos(datos, df_resultados, aoi):
                 try:
                     # INTENTAR OBTENER IMAGEN REAL DE TILES DE EARTH ENGINE
                     if campana in tiles_urls:
+                        st.info(f"🔄 Generando captura real para campaña {campana}...")
                         tile_image = obtener_imagen_real_tiles(tiles_urls[campana], aoi)
                         
                         if tile_image:
                             ax_map.imshow(tile_image, aspect='equal')
                             ax_map.set_title(f'CAMPAÑA {campana} - PÍXELES REALES DE GOOGLE EARTH ENGINE', 
                                            fontsize=16, fontweight='bold', color='green')
+                            st.success(f"✅ Captura real generada para campaña {campana}")
                         else:
                             # Fallback mejorado
                             crear_mapa_cultivos_detallado(ax_map, df_cultivos, campana, area_total)
+                            st.warning(f"⚠️ Usando gráfico fallback para campaña {campana}")
                     else:
                         # Fallback mejorado
                         crear_mapa_cultivos_detallado(ax_map, df_cultivos, campana, area_total)
+                        st.info(f"ℹ️ No hay tiles para campaña {campana}, usando gráfico mejorado")
                         
                 except Exception as e:
                     # Fallback final
                     crear_mapa_cultivos_detallado(ax_map, df_cultivos, campana, area_total)
+                    st.error(f"❌ Error generando mapa para campaña {campana}: {e}")
                 
                 ax_map.set_xticks([])
                 ax_map.set_yticks([])
@@ -4372,9 +4133,12 @@ Google Earth Engine
                 plt.close(fig)
         
         pdf_buffer.seek(0)
+        print("✅ DEBUG: PDF generado exitosamente con el formato NUEVO!")
+        st.success("✅ DEBUG: PDF generado exitosamente con el formato NUEVO!")
         return pdf_buffer.getvalue()
         
     except Exception as e:
+        print(f"❌ DEBUG: Error generando PDF con capturas reales: {e}")
         st.error(f"Error generando PDF con capturas reales: {e}")
         return None
 
@@ -4584,4 +4348,4 @@ def crear_mapa_cultivos_simple(ax, df_cultivos, campana):
         ax.text(0.5, 0.5, f'Campaña\n{campana}', ha='center', va='center', transform=ax.transAxes)
 
 if __name__ == "__main__":
-    main()
+    main() 
