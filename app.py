@@ -2059,6 +2059,7 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
         # Analizar cada año con GSW
         for ano in anos_completos:
             if ano <= 2019:  # Solo GSW hasta 2019
+        print(f"🔍 PYTHON DEBUG: Analizando GSW año {ano}")
                 st.markdown(f"🔍 Analizando año {ano} con **JRC GSW**...")
                 resultado = analizar_gsw_ano(geometry, ano, gsw)
                 if resultado and resultado['area_inundada'] > 0:
@@ -2405,7 +2406,7 @@ def crear_mapa_riesgo_hidrico(geometry, resultados_por_año, eventos_inundacion)
     """
     try:
         # Obtener centroide de la geometría
-        centroide = geometry.centroid().getInfo()['coordinates']
+        centroide = geometry.centroid(maxError=1).getInfo()['coordinates']
         
         # Crear mapa base
         mapa = folium.Map(
@@ -2477,19 +2478,47 @@ def main():
         st.error("❌ No se pudo conectar con Google Earth Engine. Verifica la configuración.")
         return
     
-    # CREAR PESTAÑAS CON ESTADO PERSISTENTE
+    # CREAR PESTAÑAS PRINCIPALES
     tabs = st.tabs(["📁 Análisis desde KMZ", "🔍 Análisis por CUIT"])
     
     with tabs[0]:
-        mostrar_analisis_kmz()
-                # RESULTADOS SE MUESTRAN DENTRO DE LAS SUB-PESTAÑAS
+        # SUB-PESTAÑAS para KMZ - SIN mostrar resultados aquí
+        sub_tabs = st.tabs(["🌾 Cultivos KMZ", "🌊 Riesgo Hídrico KMZ"])
+        
+        with sub_tabs[0]:
+            mostrar_analisis_cultivos_kmz()
+            
+            # MOSTRAR RESULTADOS DE CULTIVOS AQUÍ MISMO
+            if (st.session_state.analisis_completado and 
+                st.session_state.resultados_analisis and
+                st.session_state.resultados_analisis.get('fuente') == 'KMZ' and 
+                st.session_state.resultados_analisis.get('tipo_analisis') == 'cultivos'):
+                mostrar_resultados_analisis()
+        
+        with sub_tabs[1]:
+            mostrar_analisis_inundacion_kmz()
+            
+            # MOSTRAR RESULTADOS DE INUNDACIÓN AQUÍ MISMO
+            if (st.session_state.analisis_completado and 
+                st.session_state.resultados_analisis and
+                st.session_state.resultados_analisis.get('fuente') == 'KMZ' and 
+                st.session_state.resultados_analisis.get('tipo_analisis') == 'inundacion'):
+                st.markdown("---")
+                st.markdown("## 🌊 Resultados del Análisis de Riesgo Hídrico")
+                try:
+                    mostrar_resultados_inundacion()
+                except Exception as e:
+                    st.error(f"❌ Error mostrando resultados: {str(e)}")
+                    st.write("🔍 Debug: Estructura de resultados:")
+                    st.write(st.session_state.resultados_analisis)
         
     with tabs[1]:
         mostrar_analisis_cuit()
-        # MOSTRAR RESULTADOS DENTRO DE LA PESTAÑA CUIT
-        if st.session_state.analisis_completado and st.session_state.resultados_analisis:
-            if st.session_state.resultados_analisis.get('fuente') == 'CUIT':
-                mostrar_resultados_analisis()
+        # MOSTRAR RESULTADOS CUIT
+        if (st.session_state.analisis_completado and 
+            st.session_state.resultados_analisis and
+            st.session_state.resultados_analisis.get('fuente') == 'CUIT'):
+            mostrar_resultados_analisis()
     
     st.markdown("---")
     st.markdown("""
@@ -2497,12 +2526,11 @@ def main():
         🌾 Análisis de Rotación de Cultivos | Powered by Google Earth Engine & Streamlit
     </div>
     """, unsafe_allow_html=True)
-
 def mostrar_analisis_kmz():
     """Muestra la interfaz para análisis desde archivos KMZ"""
     
     # SUB-PESTAÑAS PARA TIPOS DE ANÁLISIS
-    sub_tabs = st.tabs(["🌾 Cultivos y Rotación", "🌊 Riesgo Hídrico"])
+    sub_tabs = st.tabs(["🌾 Cultivos KMZ", "🌊 Riesgo Hídrico KMZ"])
     
     with sub_tabs[0]:
         mostrar_analisis_cultivos_kmz()
@@ -2971,7 +2999,7 @@ MÉTRICAS DE RIESGO:
 - Categoría: {resultado_inundacion['categoria_riesgo']}
 - Probabilidad de Evento: {resultado_inundacion['probabilidad_evento']:.1f}%
 
-EVENTOS SIGNIFICATIVOS: {len(resultado_inundacion['eventos_significativos'])}
+EVENTOS SIGNIFICATIVOS: {resultado_inundacion['eventos_significativos']}
 
 Generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
