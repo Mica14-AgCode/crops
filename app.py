@@ -1989,8 +1989,11 @@ def analizar_sentinel2_ndwi_ano(geometry, ano):
 
 def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
     """
-    Analiza el riesgo de inundación usando datos de Earth Engine
-    Basado en el código de valuación de campos
+    Analiza riesgo de inundación usando METODOLOGÍA CIENTÍFICA COMPLETA:
+    - JRC Global Surface Water (GSW) 1984-2019: Estándar mundial
+    - Sentinel-2 NDWI > 0.2 (2020-2025): Umbral científico validado
+    - Análisis temporal completo: 1984-2025 (41 años)
+    - Detección de lagos/lagunas permanentes vs inundaciones temporales
     """
     try:
         # Obtener geometría del AOI
@@ -1999,117 +2002,289 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
         else:
             geometry = aoi
         
-        # Configurar años de análisis (excluir 2014 como en el código original)
-        anos_disponibles = list(range(anos_analisis[0], anos_analisis[1] + 1))
-        if 2014 in anos_disponibles:
-            anos_disponibles.remove(2014)
+        st.markdown("### 🔬 **Metodología Científica Completa (GSW + Sentinel-2)**")
+        st.markdown("**📊 JRC Global Surface Water (1984-2019) + Sentinel-2 NDWI (2020-2025)**")
         
-        # Inicializar resultados
-        resultados_por_año = {}
-        eventos_inundacion = []
+        # Calcular área del AOI
+        area_aoi = geometry.area(maxError=1).divide(10000).getInfo()  # en hectáreas
         
-        # Procesamiento por batches de años (para evitar timeout)
-        batch_size = 3
-        for i in range(0, len(anos_disponibles), batch_size):
-            batch_anos = anos_disponibles[i:i+batch_size]
-            
-            for año in batch_anos:
-                try:
-                    # Definir período de análisis (abril a marzo del año siguiente)
-                    fecha_inicio = f"{año}-04-01"
-                    fecha_fin = f"{año+1}-03-31"
-                    
-                    # Obtener datos de inundación usando diferentes sensores
-                    inundacion_data = obtener_datos_inundacion_año(geometry, fecha_inicio, fecha_fin)
-                    
-                    if inundacion_data:
-                        # Procesar datos de inundación
-                        area_total = geometry.area(maxError=1).getInfo() / 10000  # Convertir a hectáreas
-                        area_inundada = inundacion_data.get('area_inundada_ha', 0)
-                        porcentaje_inundacion = (area_inundada / area_total * 100) if area_total > 0 else 0
-                        
-                        resultados_por_año[año] = {
-                            'area_total_ha': area_total,
-                            'area_inundada_ha': area_inundada,
-                            'porcentaje_inundacion': porcentaje_inundacion,
-                            'frecuencia_eventos': inundacion_data.get('frecuencia_eventos', 0),
-                            'duracion_maxima': inundacion_data.get('duracion_maxima', 0)
-                        }
-                        
-                        # Registrar eventos significativos
-                        if porcentaje_inundacion >= umbral_inundacion:
-                            eventos_inundacion.append({
-                                'año': año,
-                                'porcentaje': porcentaje_inundacion,
-                                'area_ha': area_inundada,
-                                'severidad': 'Alta' if porcentaje_inundacion > 40 else 'Media' if porcentaje_inundacion > 20 else 'Baja'
-                            })
-                        
-                        # Mostrar progreso
-                        st.write(f"✅ Año {año}: {porcentaje_inundacion:.1f}% inundado ({area_inundada:.1f} ha)")
-                    
-                except Exception as e:
-                    st.warning(f"⚠️ Error procesando año {año}: {str(e)}")
-                    continue
+        st.markdown(f"📏 Área total del polígono: {area_aoi:.1f} ha")
         
-        # Calcular estadísticas generales
-        if resultados_por_año:
-            porcentajes = [r['porcentaje_inundacion'] for r in resultados_por_año.values()]
-            areas_inundadas = [r['area_inundada_ha'] for r in resultados_por_año.values()]
-            
+        # Ajustar años de análisis para usar toda la serie temporal disponible
+        ano_inicio = max(1984, anos_analisis[0])  # GSW empieza en 1984
+        ano_fin = min(2025, anos_analisis[1])     # Datos hasta 2025
+        
+        anos_completos = list(range(ano_inicio, ano_fin + 1))
+        st.markdown(f"📅 Analizando {len(anos_completos)} años: {ano_inicio}-{ano_fin}")
+        
+        # Diccionario para almacenar resultados
+        resultados_por_ano = {}
+        tiles_inundacion = {}  # Para mapas interactivos
+        
+        # FASE 1: ANÁLISIS CON JRC GLOBAL SURFACE WATER (1984-2019)
+        st.markdown("### 🌍 **Fase 1: JRC Global Surface Water (1984-2019)**")
+        
+        # Cargar dataset GSW - ACTUALIZADO A LA NUEVA VERSIÓN  
+        gsw = ee.ImageCollection("JRC/GSW1_4/YearlyHistory")
+        
+        # DEBUG: Mostrar años que van a GSW vs Sentinel-2
+        anos_gsw = [ano for ano in anos_completos if ano <= 2019]
+        anos_s2 = [ano for ano in anos_completos if ano >= 2020]
+        
+        if anos_gsw:
+            st.info(f"🌍 **Años con GSW**: {len(anos_gsw)} años ({min(anos_gsw)}-{max(anos_gsw)})")
+        if anos_s2:
+            st.info(f"🛰️ **Años con Sentinel-2**: {len(anos_s2)} años ({min(anos_s2)}-{max(anos_s2)})")
+        
+        # Analizar cada año con GSW
+        for ano in anos_completos:
+            if ano <= 2019:  # Solo GSW hasta 2019
+                st.markdown(f"🔍 Analizando año {ano} con **JRC GSW**...")
+                resultado = analizar_gsw_ano(geometry, ano, gsw)
+                if resultado and resultado['area_inundada'] > 0:
+                    resultados_por_ano[ano] = resultado
+                    # Crear tiles para visualización
+                    tiles_inundacion[ano] = crear_tiles_gsw_ano(geometry, ano, gsw)
+                    # DEBUG: Mostrar valores obtenidos
+                    st.markdown(f"   📊 **GSW {ano}**: {resultado['area_inundada']:.1f} ha ({resultado['porcentaje']:.1f}%)")
+                else:
+                    resultados_por_ano[ano] = {
+                        'area_inundada': 0,
+                        'porcentaje': 0,
+                        'sensor': 'GSW (sin datos)',
+                        'imagenes': 0
+                    }
+                    st.markdown(f"   ⚪ **GSW {ano}**: Sin datos")
+        
+        # FASE 2: ANÁLISIS CON SENTINEL-2 NDWI (2020-2025)
+        st.markdown("### 🛰️ **Fase 2: Sentinel-2 NDWI (2020-2025)**")
+        
+        # Analizar cada año con Sentinel-2
+        for ano in anos_completos:
+            if ano >= 2020:  # Solo Sentinel-2 desde 2020
+                st.markdown(f"🔍 Analizando año {ano} con **Sentinel-2 NDWI**...")
+                resultado = analizar_sentinel2_ndwi_ano(geometry, ano)
+                if resultado and resultado['area_inundada'] > 0:
+                    resultados_por_ano[ano] = resultado
+                    # Crear tiles para visualización
+                    tiles_inundacion[ano] = crear_tiles_sentinel2_ano(geometry, ano)
+                    # DEBUG: Mostrar valores obtenidos
+                    st.markdown(f"   📊 **S2 {ano}**: {resultado['area_inundada']:.1f} ha ({resultado['porcentaje']:.1f}%) - {resultado['imagenes']} imágenes")
+                else:
+                    resultados_por_ano[ano] = {
+                        'area_inundada': 0,
+                        'porcentaje': 0,
+                        'sensor': 'Sentinel-2 (sin datos)',
+                        'imagenes': 0
+                    }
+                    st.markdown(f"   ⚪ **S2 {ano}**: Sin datos")
+        
+        # Procesar resultados y calcular estadísticas
+        if resultados_por_ano:
             # Crear DataFrame para análisis
             df_inundacion = pd.DataFrame([
                 {
-                    'Año': año,
-                    'Área Total (ha)': datos['area_total_ha'],
-                    'Área Inundada (ha)': datos['area_inundada_ha'],
-                    'Porcentaje Inundación': datos['porcentaje_inundacion'],
-                    'Frecuencia Eventos': datos['frecuencia_eventos'],
-                    'Duración Máxima (días)': datos['duracion_maxima']
+                    'Año': ano,
+                    'Área Total (ha)': area_aoi,
+                    'Área Inundada (ha)': datos['area_inundada'],
+                    'Porcentaje Inundación': datos['porcentaje'],
+                    'Sensor': datos['sensor'],
+                    'Imágenes': datos['imagenes']
                 }
-                for año, datos in resultados_por_año.items()
+                for ano, datos in resultados_por_ano.items()
             ])
             
-            # Calcular métricas de riesgo
-            riesgo_promedio = np.mean(porcentajes)
-            riesgo_maximo = np.max(porcentajes)
-            frecuencia_eventos_significativos = len(eventos_inundacion)
-            años_con_eventos = len([e for e in eventos_inundacion if e['porcentaje'] >= umbral_inundacion])
-            probabilidad_evento = años_con_eventos / len(anos_disponibles) * 100
+            # Calcular estadísticas
+            areas_inundadas = [r['area_inundada'] for r in resultados_por_ano.values() if r['area_inundada'] > 0]
+            porcentajes = [r['porcentaje'] for r in resultados_por_ano.values() if r['porcentaje'] > 0]
             
-            # Clasificar riesgo
-            if riesgo_promedio < 10:
-                categoria_riesgo = "Bajo"
-            elif riesgo_promedio < 25:
-                categoria_riesgo = "Medio"
-            elif riesgo_promedio < 50:
-                categoria_riesgo = "Alto"
+            # Detectar lagos y lagunas permanentes (GSW)
+            lagos_detectados = []
+            anos_con_agua = len([ano for ano, datos in resultados_por_ano.items() if datos['area_inundada'] > 0])
+            frecuencia_agua = anos_con_agua / len(anos_completos) * 100
+            
+            # Clasificar agua permanente vs temporal
+            if frecuencia_agua > 70:  # Agua en >70% de los años = lago/laguna
+                lagos_detectados.append({
+                    'tipo': 'Lagos/Lagunas Permanentes',
+                    'frecuencia': frecuencia_agua,
+                    'area_promedio': np.mean(areas_inundadas) if areas_inundadas else 0
+                })
+            
+            if areas_inundadas:
+                riesgo_promedio = np.mean(porcentajes)
+                riesgo_maximo = np.max(porcentajes)
+                eventos_significativos = len([p for p in porcentajes if p >= umbral_inundacion])
+                probabilidad_evento = eventos_significativos / len(anos_completos) * 100
+                
+                # Clasificar riesgo
+                if riesgo_promedio < 5:
+                    categoria_riesgo = "Bajo"
+                elif riesgo_promedio < 15:
+                    categoria_riesgo = "Medio"
+                elif riesgo_promedio < 30:
+                    categoria_riesgo = "Alto"
+                else:
+                    categoria_riesgo = "Muy Alto"
+                
+                st.success(f"🎉 **Análisis completado**: {len(resultados_por_ano)} años analizados")
+                st.info(f"📊 **Riesgo promedio**: {riesgo_promedio:.1f}% - Categoría: {categoria_riesgo}")
+                
+                # Mostrar información de lagos/lagunas
+                if lagos_detectados:
+                    st.info(f"🏞️ **Lagos/Lagunas detectados**: Agua presente en {frecuencia_agua:.1f}% de los años")
+                
+                # CREAR MAPA BÁSICO SIEMPRE (aunque no haya eventos significativos)
+                mapa_riesgo = crear_mapa_riesgo_hidrico(geometry, resultados_por_ano, [])
+                
+                return {
+                    'df_inundacion': df_inundacion,
+                    'area_total_ha': area_aoi,
+                    'riesgo_promedio': riesgo_promedio,
+                    'riesgo_maximo': riesgo_maximo,
+                    'categoria_riesgo': categoria_riesgo,
+                    'probabilidad_evento': probabilidad_evento,
+                    'años_analizados': len(anos_completos),
+                    'años_con_datos': len(resultados_por_ano),
+                    'resultados_por_año': resultados_por_ano,
+                    'eventos_significativos': eventos_significativos,
+                    'mapa_riesgo': mapa_riesgo,
+                    'tiles_inundacion': tiles_inundacion,  # ✅ NUEVO: Tiles por año
+                    'lagos_detectados': lagos_detectados,  # ✅ NUEVO: Lagos/lagunas
+                    'frecuencia_agua': frecuencia_agua,    # ✅ NUEVO: % años con agua
+                    'metodologia': 'GSW_SENTINEL2'         # ✅ NUEVO: Identificar metodología
+                }
             else:
-                categoria_riesgo = "Muy Alto"
-            
-            # Generar mapa de riesgo
-            mapa_riesgo = crear_mapa_riesgo_hidrico(geometry, resultados_por_año, eventos_inundacion)
-            
-            return {
-                'df_inundacion': df_inundacion,
-                'area_total_ha': np.mean([r['area_total_ha'] for r in resultados_por_año.values()]),
-                'riesgo_promedio': riesgo_promedio,
-                'riesgo_maximo': riesgo_maximo,
-                'categoria_riesgo': categoria_riesgo,
-                'eventos_significativos': eventos_inundacion,
-                'frecuencia_eventos': frecuencia_eventos_significativos,
-                'probabilidad_evento': probabilidad_evento,
-                'años_analizados': len(anos_disponibles),
-                'mapa_riesgo': mapa_riesgo,
-                'resultados_por_año': resultados_por_año
-            }
+                st.info("ℹ️ **No se detectaron inundaciones significativas** en el período analizado")
+                
+                # CREAR MAPA BÁSICO INCLUSO SIN EVENTOS SIGNIFICATIVOS
+                mapa_riesgo = crear_mapa_riesgo_hidrico(geometry, resultados_por_ano, [])
+                
+                return {
+                    'df_inundacion': df_inundacion,
+                    'area_total_ha': area_aoi,
+                    'riesgo_promedio': 0,
+                    'riesgo_maximo': 0,
+                    'categoria_riesgo': "Sin riesgo",
+                    'probabilidad_evento': 0,
+                    'años_analizados': len(anos_completos),
+                    'años_con_datos': len(resultados_por_ano),
+                    'resultados_por_año': resultados_por_ano,
+                    'eventos_significativos': 0,
+                    'mapa_riesgo': mapa_riesgo,
+                    'tiles_inundacion': tiles_inundacion,
+                    'lagos_detectados': [],
+                    'frecuencia_agua': 0,
+                    'metodologia': 'GSW_SENTINEL2'
+                }
+        else:
+            st.warning("⚠️ **No se pudieron procesar los datos** para ningún año")
+            return None
+        
+    except Exception as e:
+        st.error(f"❌ Error en análisis: {str(e)}")
+        return None
+
+def crear_tiles_gsw_ano(geometry, ano, gsw):
+    """
+    Crea tiles azules para visualización de inundación GSW por año
+    """
+    try:
+        # Filtrar GSW por año
+        year_img = gsw.filter(ee.Filter.eq('year', ano)).first()
+        
+        if not year_img:
+            return None
+        
+        # Crear máscara para áreas con agua (valor 2 = agua permanente, valor 1 = estacional)
+        water_mask = year_img.eq(2).Or(year_img.eq(1))
+        
+        # Crear imagen azul para visualización
+        imagen_azul = water_mask.selfMask().visualize(**{
+            'palette': ['#0077be'],  # Azul para agua
+            'min': 0,
+            'max': 1
+        })
+        
+        # Generar tiles
+        map_id = imagen_azul.getMapId()
+        
+        if 'tile_fetcher' in map_id:
+            return map_id['tile_fetcher'].url_format
+        elif 'urlTemplate' in map_id:
+            return map_id['urlTemplate']
         else:
             return None
             
     except Exception as e:
-        st.error(f"Error en análisis de riesgo hídrico: {str(e)}")
+        print(f"Error creando tiles GSW {ano}: {str(e)}")
         return None
 
+def crear_tiles_sentinel2_ano(geometry, ano):
+    """
+    Crea tiles azules para visualización de inundación Sentinel-2 por año
+    """
+    try:
+        # Definir fechas
+        fecha_inicio = f"{ano}-01-01"
+        if ano == 2025:
+            fecha_fin = "2025-04-30"  # Solo hasta abril 2025
+        else:
+            fecha_fin = f"{ano}-12-31"
+        
+        # Colección Sentinel-2
+        s2_collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
+            .filterDate(fecha_inicio, fecha_fin) \
+            .filterBounds(geometry) \
+            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50))
+        
+        if s2_collection.size().getInfo() == 0:
+            s2_collection = ee.ImageCollection('COPERNICUS/S2_SR') \
+                .filterDate(fecha_inicio, fecha_fin) \
+                .filterBounds(geometry) \
+                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50))
+        
+        if s2_collection.size().getInfo() == 0:
+            return None
+        
+        # Función para calcular NDWI
+        def add_ndwi(image):
+            ndwi = image.normalizedDifference(['B3', 'B8']).rename('NDWI')
+            try:
+                cloud_mask = image.select('QA60').bitwiseAnd(1 << 10).eq(0)
+            except:
+                cloud_mask = ee.Image(1)
+            return image.addBands(ndwi).updateMask(cloud_mask)
+        
+        # Aplicar función a la colección
+        s2_ndwi = s2_collection.map(add_ndwi)
+        
+        # Calcular composición anual (mediana)
+        ndwi_median = s2_ndwi.select('NDWI').median()
+        
+        # Crear máscara de agua
+        water_mask = ndwi_median.gt(0.2)
+        
+        # Crear imagen azul para visualización
+        imagen_azul = water_mask.selfMask().visualize(**{
+            'palette': ['#0077be'],  # Azul para agua
+            'min': 0,
+            'max': 1
+        })
+        
+        # Generar tiles
+        map_id = imagen_azul.getMapId()
+        
+        if 'tile_fetcher' in map_id:
+            return map_id['tile_fetcher'].url_format
+        elif 'urlTemplate' in map_id:
+            return map_id['urlTemplate']
+        else:
+            return None
+            
+    except Exception as e:
+        print(f"Error creando tiles Sentinel-2 {ano}: {str(e)}")
+        return None
 def obtener_datos_inundacion_año(geometry, fecha_inicio, fecha_fin):
     """
     Obtiene datos de inundación para un año específico
