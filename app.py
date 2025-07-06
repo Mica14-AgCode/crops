@@ -2008,7 +2008,7 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
             geometry = aoi
         
         st.markdown("### 🔬 **Metodología Científica Completa (GSW + Sentinel-2)**")
-        st.markdown("**📊 JRC Global Surface Water (1984-2019) + Sentinel-2 NDWI (2020-2025)**")
+        # ARREGLO PESTAÑAS GSW: st.markdown("**📊 JRC Global Surface Water (1984-2019) + Sentinel-2 NDWI (2020-2025)**")
         
         # Calcular área del AOI
         area_aoi = geometry.area(maxError=1).divide(10000).getInfo()  # en hectáreas
@@ -2105,7 +2105,7 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
         # MENSAJE INFORMATIVO para campos sin agua
         if len(areas_inundadas) == 0:
             st.info("ℹ️ **Campo agrícola sin historial de agua** - Esto es normal para campos de cultivo")
-            st.markdown("**Interpretación**: Este polígono corresponde a un campo agrícola que no presenta historial de inundaciones o agua superficial permanente, lo cual es esperado para áreas dedicadas a la agricultura.")
+        # ARREGLO PESTAÑAS GSW: st.markdown("**Interpretación**: Este polígono corresponde a un campo agrícola que no presenta historial de inundaciones o agua superficial permanente, lo cual es esperado para áreas dedicadas a la agricultura.")
         
         if resultados_por_ano:
             # Crear DataFrame para análisis
@@ -2155,7 +2155,7 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
                     categoria_riesgo = "Muy Alto"
                 
                 st.success(f"🎉 **Análisis completado**: {len(resultados_por_ano)} años analizados")
-                st.info(f"📊 **Riesgo promedio**: {riesgo_promedio:.1f}% - Categoría: {categoria_riesgo}")
+        # ARREGLO PESTAÑAS GSW: st.info(f"📊 **Riesgo promedio**: {riesgo_promedio:.1f}% - Categoría: {categoria_riesgo}")
                 
                 # Mostrar información de lagos/lagunas
                 if lagos_detectados:
