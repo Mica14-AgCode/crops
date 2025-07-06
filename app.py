@@ -2582,17 +2582,17 @@ def mostrar_analisis_cultivos_kmz():
                 
                 if df_cultivos is not None and not df_cultivos.empty:
                     # GUARDAR TODO EN SESSION STATE
-                    st.session_state.resultados_analisis = {
-                        'tipo_analisis': 'cultivos',
-                        'df_cultivos': df_cultivos,
-                        'area_total': area_total,
-                        'tiles_urls': tiles_urls,
-                        'cultivos_por_campana': cultivos_por_campana,
-                        'aoi': aoi,
-                        'archivo_info': f"{len(uploaded_files)} archivo(s) - {len(todos_los_poligonos)} polígonos",
-                        'nombres_archivos': nombres_archivos,  # Guardar nombres para descargas
-                        'fuente': 'KMZ'  # Identificar fuente
-                    }
+                    # ARREGLO PESTAÑAS: st.session_state.resultados_analisis = {
+                    # 'tipo_analisis': 'cultivos',
+                    # 'df_cultivos': df_cultivos,
+                    # 'area_total': area_total,
+                    # 'tiles_urls': tiles_urls,
+                    # 'cultivos_por_campana': cultivos_por_campana,
+                    # 'aoi': aoi,
+                    # 'archivo_info': f"{len(uploaded_files)} archivo(s) - {len(todos_los_poligonos)} polígonos",
+                    # 'nombres_archivos': nombres_archivos,  # Guardar nombres para descargas
+                    # 'fuente': 'KMZ'  # Identificar fuente
+                    # }
                     st.session_state.analisis_completado = True
                     st.success("🎉 ¡Análisis completado exitosamente!")
                     # SIN RERUN para mantener la pestaña activa
@@ -2703,7 +2703,7 @@ def mostrar_analisis_inundacion_kmz():
                 
                 if resultado_inundacion:
 # ARREGLO PESTAÑAS:                     # GUARDAR RESULTADOS DE INUNDACIÓN
-# ARREGLO PESTAÑAS:                     st.session_state.resultados_analisis = {
+# ARREGLO PESTAÑAS:                     # ARREGLO PESTAÑAS: st.session_state.resultados_analisis = {
 # ARREGLO PESTAÑAS:                         'tipo_analisis': 'inundacion',
 # ARREGLO PESTAÑAS:                         'resultado_inundacion': resultado_inundacion,
 # ARREGLO PESTAÑAS:                         'aoi': aoi,
@@ -2847,20 +2847,20 @@ def mostrar_analisis_cuit():
                             
                             if resultados_individuales:
                                 # GUARDAR RESULTADOS INDIVIDUALES EN SESSION STATE
-                                st.session_state.resultados_analisis = {
-                                    'tipo': 'individual',
-                                    'resultados_individuales': resultados_individuales,
-                                    'campo_principal': campo_mas_grande,
-                                    'total_campos': len(resultados_individuales),
-                                    'superficie_total': sum(r['campo_superficie'] for r in resultados_individuales),
-                                    'fuente': 'CUIT_INDIVIDUAL',
-                                    'cuit_info': {
-                                        'cuit': cuit_input,
-                                        'campos_encontrados': len(poligonos_data),
-                                        'solo_activos': solo_activos
-                                    },
-                                    'nombres_archivos': [f"CUIT_{normalizar_cuit(cuit_input).replace('-', '')}_individual"]
-                                }
+                                # ARREGLO PESTAÑAS: st.session_state.resultados_analisis = {
+                                # 'tipo': 'individual',
+                                # 'resultados_individuales': resultados_individuales,
+                                # 'campo_principal': campo_mas_grande,
+                                # 'total_campos': len(resultados_individuales),
+                                # 'superficie_total': sum(r['campo_superficie'] for r in resultados_individuales),
+                                # 'fuente': 'CUIT_INDIVIDUAL',
+                                # 'cuit_info': {
+                                # 'cuit': cuit_input,
+                                # 'campos_encontrados': len(poligonos_data),
+                                # 'solo_activos': solo_activos
+                                # },
+                                # 'nombres_archivos': [f"CUIT_{normalizar_cuit(cuit_input).replace('-', '')}_individual"]
+                                # }
                                 st.session_state.analisis_completado = True
                                 st.success("🎉 ¡Análisis individual completado exitosamente!")
                                 st.info("📋 Los resultados de cada campo aparecerán abajo.")
@@ -2902,23 +2902,23 @@ def mostrar_analisis_cuit():
                             
                             if df_cultivos is not None and not df_cultivos.empty:
                                 # GUARDAR TODO EN SESSION STATE
-                                st.session_state.resultados_analisis = {
-                                    'tipo': 'general',
-                                    'df_cultivos': df_cultivos,
-                                    'area_total': area_total,
-                                    'tiles_urls': tiles_urls,
-                                    'cultivos_por_campana': cultivos_por_campana,
-                                    'aoi': aoi,
-                                    'archivo_info': f"CUIT: {cuit_input} - {len(poligonos_data)} campos",
-                                    'nombres_archivos': [f"CUIT_{normalizar_cuit(cuit_input).replace('-', '')}"],
-                                    'fuente': 'CUIT',  # Identificar fuente
-                                    'cuit_info': {
-                                        'cuit': cuit_input,
-                                        'campos_encontrados': len(poligonos_data),
-                                        'solo_activos': solo_activos
-                                    },
-                                    'poligonos_data': poligonos_data  # Para generar KMZ
-                                }
+                                # ARREGLO PESTAÑAS: st.session_state.resultados_analisis = {
+                                # 'tipo': 'general',
+                                # 'df_cultivos': df_cultivos,
+                                # 'area_total': area_total,
+                                # 'tiles_urls': tiles_urls,
+                                # 'cultivos_por_campana': cultivos_por_campana,
+                                # 'aoi': aoi,
+                                # 'archivo_info': f"CUIT: {cuit_input} - {len(poligonos_data)} campos",
+                                # 'nombres_archivos': [f"CUIT_{normalizar_cuit(cuit_input).replace('-', '')}"],
+                                # 'fuente': 'CUIT',  # Identificar fuente
+                                # 'cuit_info': {
+                                # 'cuit': cuit_input,
+                                # 'campos_encontrados': len(poligonos_data),
+                                # 'solo_activos': solo_activos
+                                # },
+                                # 'poligonos_data': poligonos_data  # Para generar KMZ
+                                # }
                                 st.session_state.analisis_completado = True
                                 st.success("🎉 ¡Análisis completado exitosamente!")
                                 # SIN RERUN para mantener la pestaña activa
