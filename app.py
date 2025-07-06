@@ -1827,50 +1827,50 @@ def procesar_campos_cuit(cuit, solo_activos=True):
 
 def analizar_gsw_ano(geometry, ano, gsw):
     """
-    Analiza un año específico con JRC Global Surface Water
-    VERSIÓN SIMPLIFICADA Y ROBUSTA
+    VERSIÓN EXACTA como Google Earth Engine que funciona
+    Basada en: yearImg.eq(2) - SOLO agua permanente
     """
     try:
-        # Filtrar GSW por año
+        # Filtrar GSW por año - EXACTO como GEE
         year_img = gsw.filter(ee.Filter.eq('year', ano)).first()
         
-        # Verificar si hay imagen
+        # Verificar si hay imagen - EXACTO como GEE
         if not year_img:
             return {
                 'area_inundada': 0,
                 'porcentaje': 0,
-                'sensor': 'JRC GSW (sin datos)',
+                'sensor': 'JRC GSW (sin imagen)',
                 'imagenes': 0
             }
         
-        # Crear máscara para áreas con agua (valor 2 = agua permanente, valor 1 = estacional)
-        water_mask = year_img.eq(2).Or(year_img.eq(1))
+        # Crear máscara EXACTA como GEE: yearImg.eq(2) - SOLO agua permanente
+        water_mask = year_img.eq(2)
         
-        # Calcular área total del AOI
-        area_total = geometry.area(maxError=1).divide(10000).getInfo()
+        # Calcular área EXACTO como GEE
+        area_inundada = water_mask.multiply(ee.Image.pixelArea()).divide(10000) \
+            .reduceRegion(
+                reducer=ee.Reducer.sum(),
+                geometry=geometry,
+                scale=30,
+                maxPixels=1e9
+            ).getInfo()
         
-        # Calcular área inundada usando pixelArea
-        area_inundada_img = water_mask.multiply(ee.Image.pixelArea()).divide(10000)
-        
-        # Usar reduceRegion con parámetros conservadores
-        area_stats = area_inundada_img.reduceRegion(
-            reducer=ee.Reducer.sum(),
-            geometry=geometry,
-            scale=30,
-            maxPixels=1e9,
-            bestEffort=True
-        ).getInfo()
-        
-        # Extraer área inundada de manera robusta
+        # Obtener el valor del área - MÉTODO EXACTO como GEE
         area_ha = 0
-        if area_stats:
-            # Buscar el valor en las posibles keys
-            for key in ['constant', 'sum', 'b1', 'classification']:
-                if key in area_stats and area_stats[key] is not None:
-                    area_ha = max(area_ha, area_stats[key])
+        if area_inundada:
+            # Buscar en todas las keys posibles
+            for key in area_inundada.keys():
+                if area_inundada[key] and area_inundada[key] > 0:
+                    area_ha = area_inundada[key]
+                    break
         
-        # Calcular porcentaje
+        # Calcular área total y porcentaje
+        area_total = geometry.area(maxError=1).divide(10000).getInfo()
         porcentaje = (area_ha / area_total * 100) if area_total > 0 else 0
+        
+        # DEBUG: Mostrar información detallada
+        if area_ha > 0:
+            st.write(f"✅ GSW {ano}: Detectó {area_ha:.1f} ha ({porcentaje:.1f}%)")
         
         return {
             'area_inundada': area_ha,
@@ -1880,41 +1880,40 @@ def analizar_gsw_ano(geometry, ano, gsw):
         }
         
     except Exception as e:
+        st.error(f"❌ Error GSW {ano}: {str(e)}")
         return {
             'area_inundada': 0,
             'porcentaje': 0,
-            'sensor': 'JRC GSW (error)',
+            'sensor': f'JRC GSW (error: {str(e)[:50]})',
             'imagenes': 0
         }
-
 def analizar_sentinel2_ndwi_ano(geometry, ano):
     """
-    Analiza un año específico con Sentinel-2 NDWI
-    VERSIÓN SIMPLIFICADA Y ROBUSTA
+    VERSIÓN EXACTA como Google Earth Engine que funciona  
+    Basada en: ndwiMax = s2Collection.select('NDWI').max()
     """
     try:
         # Definir fechas
         fecha_inicio = f"{ano}-01-01"
         if ano == 2025:
-            fecha_fin = "2025-04-30"  # Solo hasta abril 2025
+            fecha_fin = "2025-04-30"
         else:
             fecha_fin = f"{ano}-12-31"
         
-        # Intentar primero con colección armonizada
+        # Colección Sentinel-2 EXACTA como GEE
         s2_collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
             .filterDate(fecha_inicio, fecha_fin) \
             .filterBounds(geometry) \
-            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50))
+            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 70))  # EXACTO como GEE
         
-        # Contar imágenes
         num_imagenes = s2_collection.size().getInfo()
         
-        # Si no hay suficientes imágenes, intentar con colección principal
+        # Fallback EXACTO como GEE
         if num_imagenes == 0:
             s2_collection = ee.ImageCollection('COPERNICUS/S2_SR') \
                 .filterDate(fecha_inicio, fecha_fin) \
                 .filterBounds(geometry) \
-                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50))
+                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 70))
             
             num_imagenes = s2_collection.size().getInfo()
         
@@ -1922,71 +1921,77 @@ def analizar_sentinel2_ndwi_ano(geometry, ano):
             return {
                 'area_inundada': 0,
                 'porcentaje': 0,
-                'sensor': 'Sentinel-2 (sin datos)',
+                'sensor': f'Sentinel-2 (sin imágenes {ano})',
                 'imagenes': 0
             }
         
-        # Función para calcular NDWI simplificada
+        # Función NDWI EXACTA como GEE
         def add_ndwi(image):
-            # Calcular NDWI: (Green - NIR) / (Green + NIR)
             ndwi = image.normalizedDifference(['B3', 'B8']).rename('NDWI')
             
-            # Máscara de nubes básica
-            try:
+            # Máscara de nubes EXACTA como GEE
+            band_names = image.bandNames()
+            has_qa60 = band_names.contains('QA60')
+            has_msk_cldprb = band_names.contains('MSK_CLDPRB')
+            
+            if has_qa60:
                 cloud_mask = image.select('QA60').bitwiseAnd(1 << 10).eq(0)
-            except:
-                cloud_mask = ee.Image(1)  # Sin máscara si falla
+            elif has_msk_cldprb:
+                cloud_mask = image.select('MSK_CLDPRB').lt(50)
+            else:
+                cloud_mask = ee.Image(1)
             
             return image.addBands(ndwi).updateMask(cloud_mask)
         
-        # Aplicar función a la colección
+        # Calcular NDWI
         s2_ndwi = s2_collection.map(add_ndwi)
         
-        # Calcular composición anual (mediana para ser más conservador)
-        ndwi_median = s2_ndwi.select('NDWI').median()
+        # MÉTODO EXACTO como GEE: .max() en lugar de percentile
+        ndwi_max = s2_ndwi.select('NDWI').max()
         
-        # Crear máscara de agua usando umbral científico
-        water_mask = ndwi_median.gt(0.2)  # Umbral más conservador
+        # Umbral EXACTO como GEE: gt(0.1)
+        water_mask = ndwi_max.gt(0.1)
         
-        # Calcular área total del AOI
-        area_total = geometry.area(maxError=1).divide(10000).getInfo()
+        # Calcular área EXACTO como GEE
+        area_inundada = water_mask.multiply(ee.Image.pixelArea()).divide(10000) \
+            .reduceRegion(
+                reducer=ee.Reducer.sum(),
+                geometry=geometry,
+                scale=10,  # Resolución Sentinel-2
+                maxPixels=1e9
+            ).getInfo()
         
-        # Calcular área inundada
-        area_inundada_img = water_mask.multiply(ee.Image.pixelArea()).divide(10000)
-        
-        area_stats = area_inundada_img.reduceRegion(
-            reducer=ee.Reducer.sum(),
-            geometry=geometry,
-            scale=20,  # Resolución más conservadora
-            maxPixels=1e9,
-            bestEffort=True
-        ).getInfo()
-        
-        # Extraer área inundada de manera robusta
+        # Extraer área EXACTO como GEE
         area_ha = 0
-        if area_stats:
-            for key in ['NDWI', 'constant', 'sum', 'b1']:
-                if key in area_stats and area_stats[key] is not None:
-                    area_ha = max(area_ha, area_stats[key])
+        if area_inundada:
+            for key in area_inundada.keys():
+                if area_inundada[key] and area_inundada[key] > 0:
+                    area_ha = area_inundada[key]
+                    break
         
         # Calcular porcentaje
+        area_total = geometry.area(maxError=1).divide(10000).getInfo()
         porcentaje = (area_ha / area_total * 100) if area_total > 0 else 0
+        
+        # DEBUG: Mostrar información detallada
+        if area_ha > 0:
+            st.write(f"✅ S2 {ano}: Detectó {area_ha:.1f} ha ({porcentaje:.1f}%) con {num_imagenes} imágenes")
         
         return {
             'area_inundada': area_ha,
             'porcentaje': porcentaje,
-            'sensor': 'Sentinel-2 NDWI',
+            'sensor': f'Sentinel-2 NDWI',
             'imagenes': num_imagenes
         }
         
     except Exception as e:
+        st.error(f"❌ Error Sentinel-2 {ano}: {str(e)}")
         return {
             'area_inundada': 0,
             'porcentaje': 0,
-            'sensor': 'Sentinel-2 (error)',
+            'sensor': f'Sentinel-2 (error: {str(e)[:50]})',
             'imagenes': 0
         }
-
 def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
     """
     Analiza riesgo de inundación usando METODOLOGÍA CIENTÍFICA COMPLETA:
@@ -2378,168 +2383,6 @@ def procesar_sentinel1_agua(imagen):
     except Exception as e:
         print(f"Error procesando Sentinel-1: {str(e)}")
         return imagen.select('VH').multiply(0)
-
-def analizar_gsw_ano(geometry, ano, gsw):
-    """
-    Analiza un año específico con JRC Global Surface Water
-    VERSIÓN SIMPLIFICADA Y ROBUSTA
-    """
-    try:
-        # Filtrar GSW por año
-        year_img = gsw.filter(ee.Filter.eq('year', ano)).first()
-        
-        # Verificar si hay imagen
-        if not year_img:
-            return {
-                'area_inundada': 0,
-                'porcentaje': 0,
-                'sensor': 'JRC GSW (sin datos)',
-                'imagenes': 0
-            }
-        
-        # Crear máscara para áreas con agua (valor 2 = agua permanente, valor 1 = estacional)
-        water_mask = year_img.eq(2).Or(year_img.eq(1))
-        
-        # Calcular área total del AOI
-        area_total = geometry.area(maxError=1).divide(10000).getInfo()
-        
-        # Calcular área inundada usando pixelArea
-        area_inundada_img = water_mask.multiply(ee.Image.pixelArea()).divide(10000)
-        
-        # Usar reduceRegion con parámetros conservadores
-        area_stats = area_inundada_img.reduceRegion(
-            reducer=ee.Reducer.sum(),
-            geometry=geometry,
-            scale=30,
-            maxPixels=1e9,
-            bestEffort=True
-        ).getInfo()
-        
-        # Extraer área inundada de manera robusta
-        area_ha = 0
-        if area_stats:
-            # Buscar el valor en las posibles keys
-            for key in ['constant', 'sum', 'b1', 'classification']:
-                if key in area_stats and area_stats[key] is not None:
-                    area_ha = max(area_ha, area_stats[key])
-        
-        # Calcular porcentaje
-        porcentaje = (area_ha / area_total * 100) if area_total > 0 else 0
-        
-        return {
-            'area_inundada': area_ha,
-            'porcentaje': porcentaje,
-            'sensor': 'JRC GSW',
-            'imagenes': 1
-        }
-        
-    except Exception as e:
-        return {
-            'area_inundada': 0,
-            'porcentaje': 0,
-            'sensor': 'JRC GSW (error)',
-            'imagenes': 0
-        }
-
-def analizar_sentinel2_ndwi_ano(geometry, ano):
-    """
-    Analiza un año específico con Sentinel-2 NDWI
-    VERSIÓN SIMPLIFICADA Y ROBUSTA
-    """
-    try:
-        # Definir fechas
-        fecha_inicio = f"{ano}-01-01"
-        if ano == 2025:
-            fecha_fin = "2025-04-30"  # Solo hasta abril 2025
-        else:
-            fecha_fin = f"{ano}-12-31"
-        
-        # Intentar primero con colección armonizada
-        s2_collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
-            .filterDate(fecha_inicio, fecha_fin) \
-            .filterBounds(geometry) \
-            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50))
-        
-        # Contar imágenes
-        num_imagenes = s2_collection.size().getInfo()
-        
-        # Si no hay suficientes imágenes, intentar con colección principal
-        if num_imagenes == 0:
-            s2_collection = ee.ImageCollection('COPERNICUS/S2_SR') \
-                .filterDate(fecha_inicio, fecha_fin) \
-                .filterBounds(geometry) \
-                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50))
-            
-            num_imagenes = s2_collection.size().getInfo()
-        
-        if num_imagenes == 0:
-            return {
-                'area_inundada': 0,
-                'porcentaje': 0,
-                'sensor': 'Sentinel-2 (sin datos)',
-                'imagenes': 0
-            }
-        
-        # Función para calcular NDWI simplificada
-        def add_ndwi(image):
-            # Calcular NDWI: (Green - NIR) / (Green + NIR)
-            ndwi = image.normalizedDifference(['B3', 'B8']).rename('NDWI')
-            
-            # Máscara de nubes básica
-            try:
-                cloud_mask = image.select('QA60').bitwiseAnd(1 << 10).eq(0)
-            except:
-                cloud_mask = ee.Image(1)  # Sin máscara si falla
-            
-            return image.addBands(ndwi).updateMask(cloud_mask)
-        
-        # Aplicar función a la colección
-        s2_ndwi = s2_collection.map(add_ndwi)
-        
-        # Calcular composición anual (mediana para ser más conservador)
-        ndwi_median = s2_ndwi.select('NDWI').median()
-        
-        # Crear máscara de agua usando umbral científico
-        water_mask = ndwi_median.gt(0.2)  # Umbral más conservador
-        
-        # Calcular área total del AOI
-        area_total = geometry.area(maxError=1).divide(10000).getInfo()
-        
-        # Calcular área inundada
-        area_inundada_img = water_mask.multiply(ee.Image.pixelArea()).divide(10000)
-        
-        area_stats = area_inundada_img.reduceRegion(
-            reducer=ee.Reducer.sum(),
-            geometry=geometry,
-            scale=20,  # Resolución más conservadora
-            maxPixels=1e9,
-            bestEffort=True
-        ).getInfo()
-        
-        # Extraer área inundada de manera robusta
-        area_ha = 0
-        if area_stats:
-            for key in ['NDWI', 'constant', 'sum', 'b1']:
-                if key in area_stats and area_stats[key] is not None:
-                    area_ha = max(area_ha, area_stats[key])
-        
-        # Calcular porcentaje
-        porcentaje = (area_ha / area_total * 100) if area_total > 0 else 0
-        
-        return {
-            'area_inundada': area_ha,
-            'porcentaje': porcentaje,
-            'sensor': 'Sentinel-2 NDWI',
-            'imagenes': num_imagenes
-        }
-        
-    except Exception as e:
-        return {
-            'area_inundada': 0,
-            'porcentaje': 0,
-            'sensor': 'Sentinel-2 (error)',
-            'imagenes': 0
-        }
 
 def crear_mapa_riesgo_hidrico(geometry, resultados_por_año, eventos_inundacion):
     """
