@@ -1000,7 +1000,7 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
                 tiles=tiles_urls[campana_seleccionada],
                 attr='Google Earth Engine',
                 name=f'🌾 Cultivos {campana_seleccionada} (100%)',
-                overlay=False,  # NO activo por defecto
+                overlay=True,  # ✅ ARREGLADO: Ahora puede coexistir con satelital
                 control=True,
                 opacity=1.0
             ).add_to(m)
@@ -1010,7 +1010,7 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
                 tiles=tiles_urls[campana_seleccionada],
                 attr='Google Earth Engine',
                 name=f'🌾 Cultivos {campana_seleccionada} (70%)',
-                overlay=False,  # NO activo por defecto
+                overlay=True,  # ✅ ARREGLADO: Ahora puede coexistir con satelital
                 control=True,
                 opacity=0.7
             ).add_to(m)
@@ -1030,7 +1030,7 @@ def crear_mapa_con_tiles_engine(aoi, tiles_urls, df_resultados, cultivos_por_cam
                 tiles=tiles_urls[campana_seleccionada],
                 attr='Google Earth Engine',
                 name=f'🌾 Cultivos {campana_seleccionada} (30%)',
-                overlay=False,  # NO activo por defecto
+                overlay=True,  # ✅ ARREGLADO: Ahora puede coexistir con satelital
                 control=True,
                 opacity=0.3
             ).add_to(m)
@@ -1862,7 +1862,7 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
                     
                     if inundacion_data:
                         # Procesar datos de inundación
-                        area_total = geometry.area().getInfo() / 10000  # Convertir a hectáreas
+                        area_total = geometry.area(maxError=1).getInfo() / 10000  # Convertir a hectáreas
                         area_inundada = inundacion_data.get('area_inundada_ha', 0)
                         porcentaje_inundacion = (area_inundada / area_total * 100) if area_total > 0 else 0
                         
