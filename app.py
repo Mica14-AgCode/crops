@@ -2357,6 +2357,168 @@ def procesar_sentinel1_agua(imagen):
         print(f"Error procesando Sentinel-1: {str(e)}")
         return imagen.select('VH').multiply(0)
 
+def analizar_gsw_ano(geometry, ano, gsw):
+    """
+    Analiza un año específico con JRC Global Surface Water
+    VERSIÓN SIMPLIFICADA Y ROBUSTA
+    """
+    try:
+        # Filtrar GSW por año
+        year_img = gsw.filter(ee.Filter.eq('year', ano)).first()
+        
+        # Verificar si hay imagen
+        if not year_img:
+            return {
+                'area_inundada': 0,
+                'porcentaje': 0,
+                'sensor': 'JRC GSW (sin datos)',
+                'imagenes': 0
+            }
+        
+        # Crear máscara para áreas con agua (valor 2 = agua permanente, valor 1 = estacional)
+        water_mask = year_img.eq(2).Or(year_img.eq(1))
+        
+        # Calcular área total del AOI
+        area_total = geometry.area(maxError=1).divide(10000).getInfo()
+        
+        # Calcular área inundada usando pixelArea
+        area_inundada_img = water_mask.multiply(ee.Image.pixelArea()).divide(10000)
+        
+        # Usar reduceRegion con parámetros conservadores
+        area_stats = area_inundada_img.reduceRegion(
+            reducer=ee.Reducer.sum(),
+            geometry=geometry,
+            scale=30,
+            maxPixels=1e9,
+            bestEffort=True
+        ).getInfo()
+        
+        # Extraer área inundada de manera robusta
+        area_ha = 0
+        if area_stats:
+            # Buscar el valor en las posibles keys
+            for key in ['constant', 'sum', 'b1', 'classification']:
+                if key in area_stats and area_stats[key] is not None:
+                    area_ha = max(area_ha, area_stats[key])
+        
+        # Calcular porcentaje
+        porcentaje = (area_ha / area_total * 100) if area_total > 0 else 0
+        
+        return {
+            'area_inundada': area_ha,
+            'porcentaje': porcentaje,
+            'sensor': 'JRC GSW',
+            'imagenes': 1
+        }
+        
+    except Exception as e:
+        return {
+            'area_inundada': 0,
+            'porcentaje': 0,
+            'sensor': 'JRC GSW (error)',
+            'imagenes': 0
+        }
+
+def analizar_sentinel2_ndwi_ano(geometry, ano):
+    """
+    Analiza un año específico con Sentinel-2 NDWI
+    VERSIÓN SIMPLIFICADA Y ROBUSTA
+    """
+    try:
+        # Definir fechas
+        fecha_inicio = f"{ano}-01-01"
+        if ano == 2025:
+            fecha_fin = "2025-04-30"  # Solo hasta abril 2025
+        else:
+            fecha_fin = f"{ano}-12-31"
+        
+        # Intentar primero con colección armonizada
+        s2_collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
+            .filterDate(fecha_inicio, fecha_fin) \
+            .filterBounds(geometry) \
+            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50))
+        
+        # Contar imágenes
+        num_imagenes = s2_collection.size().getInfo()
+        
+        # Si no hay suficientes imágenes, intentar con colección principal
+        if num_imagenes == 0:
+            s2_collection = ee.ImageCollection('COPERNICUS/S2_SR') \
+                .filterDate(fecha_inicio, fecha_fin) \
+                .filterBounds(geometry) \
+                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50))
+            
+            num_imagenes = s2_collection.size().getInfo()
+        
+        if num_imagenes == 0:
+            return {
+                'area_inundada': 0,
+                'porcentaje': 0,
+                'sensor': 'Sentinel-2 (sin datos)',
+                'imagenes': 0
+            }
+        
+        # Función para calcular NDWI simplificada
+        def add_ndwi(image):
+            # Calcular NDWI: (Green - NIR) / (Green + NIR)
+            ndwi = image.normalizedDifference(['B3', 'B8']).rename('NDWI')
+            
+            # Máscara de nubes básica
+            try:
+                cloud_mask = image.select('QA60').bitwiseAnd(1 << 10).eq(0)
+            except:
+                cloud_mask = ee.Image(1)  # Sin máscara si falla
+            
+            return image.addBands(ndwi).updateMask(cloud_mask)
+        
+        # Aplicar función a la colección
+        s2_ndwi = s2_collection.map(add_ndwi)
+        
+        # Calcular composición anual (mediana para ser más conservador)
+        ndwi_median = s2_ndwi.select('NDWI').median()
+        
+        # Crear máscara de agua usando umbral científico
+        water_mask = ndwi_median.gt(0.2)  # Umbral más conservador
+        
+        # Calcular área total del AOI
+        area_total = geometry.area(maxError=1).divide(10000).getInfo()
+        
+        # Calcular área inundada
+        area_inundada_img = water_mask.multiply(ee.Image.pixelArea()).divide(10000)
+        
+        area_stats = area_inundada_img.reduceRegion(
+            reducer=ee.Reducer.sum(),
+            geometry=geometry,
+            scale=20,  # Resolución más conservadora
+            maxPixels=1e9,
+            bestEffort=True
+        ).getInfo()
+        
+        # Extraer área inundada de manera robusta
+        area_ha = 0
+        if area_stats:
+            for key in ['NDWI', 'constant', 'sum', 'b1']:
+                if key in area_stats and area_stats[key] is not None:
+                    area_ha = max(area_ha, area_stats[key])
+        
+        # Calcular porcentaje
+        porcentaje = (area_ha / area_total * 100) if area_total > 0 else 0
+        
+        return {
+            'area_inundada': area_ha,
+            'porcentaje': porcentaje,
+            'sensor': 'Sentinel-2 NDWI',
+            'imagenes': num_imagenes
+        }
+        
+    except Exception as e:
+        return {
+            'area_inundada': 0,
+            'porcentaje': 0,
+            'sensor': 'Sentinel-2 (error)',
+            'imagenes': 0
+        }
+
 def crear_mapa_riesgo_hidrico(geometry, resultados_por_año, eventos_inundacion):
     """
     Crea un mapa interactivo de riesgo hídrico
@@ -2440,16 +2602,8 @@ def main():
     
     with tabs[0]:
         mostrar_analisis_kmz()
-        # MOSTRAR RESULTADOS DENTRO DE LA PESTAÑA KMZ
-        if st.session_state.analisis_completado and st.session_state.resultados_analisis:
-            if st.session_state.resultados_analisis.get('fuente') == 'KMZ':
-                # Verificar el tipo de análisis para mostrar los resultados apropiados
-                tipo_analisis = st.session_state.resultados_analisis.get('tipo_analisis', 'cultivos')
-                if tipo_analisis == 'cultivos':
-                    mostrar_resultados_analisis()
-                elif tipo_analisis == 'inundacion':
-                    mostrar_resultados_inundacion()
-    
+                # RESULTADOS SE MUESTRAN DENTRO DE LAS SUB-PESTAÑAS
+        
     with tabs[1]:
         mostrar_analisis_cuit()
         # MOSTRAR RESULTADOS DENTRO DE LA PESTAÑA CUIT
@@ -2473,8 +2627,21 @@ def mostrar_analisis_kmz():
     with sub_tabs[0]:
         mostrar_analisis_cultivos_kmz()
     
+            # MOSTRAR RESULTADOS DE CULTIVOS DENTRO DE LA SUB-PESTAÑA
+        if st.session_state.analisis_completado and st.session_state.resultados_analisis:
+            if st.session_state.resultados_analisis.get('fuente') == 'KMZ':
+                tipo_analisis = st.session_state.resultados_analisis.get('tipo_analisis', 'cultivos')
+                if tipo_analisis == 'cultivos':
+                    mostrar_resultados_analisis()
+    
     with sub_tabs[1]:
         mostrar_analisis_inundacion_kmz()
+        # MOSTRAR RESULTADOS DE INUNDACIÓN DENTRO DE LA SUB-PESTAÑA
+        if st.session_state.analisis_completado and st.session_state.resultados_analisis:
+            if st.session_state.resultados_analisis.get('fuente') == 'KMZ':
+                tipo_analisis = st.session_state.resultados_analisis.get('tipo_analisis', 'cultivos')
+                if tipo_analisis == 'inundacion':
+                    mostrar_resultados_inundacion()
 
 def mostrar_analisis_cultivos_kmz():
     """Análisis de cultivos desde archivos KMZ"""
@@ -2637,6 +2804,10 @@ def mostrar_analisis_inundacion_kmz():
         
         # BOTÓN DE ANÁLISIS DE INUNDACIÓN
         if st.button("🌊 Analizar Riesgo Hídrico", type="primary", key="btn_analizar_inundacion_kmz"):
+            # 🚨 LIMPIAR RESULTADOS ANTERIORES PARA EVITAR CACHE DE FUNCIÓN ANTIGUA
+            st.session_state.analisis_completado = False
+            st.session_state.resultados_analisis = None
+            
             with st.spinner("🔄 Analizando riesgo hídrico (esto puede tardar varios minutos)..."):
                 # Procesar archivos KMZ
                 todos_los_poligonos = []
