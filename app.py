@@ -1825,6 +1825,168 @@ def procesar_campos_cuit(cuit, solo_activos=True):
         st.error(f"Error procesando CUIT {cuit}: {e}")
         return []
 
+def analizar_gsw_ano(geometry, ano, gsw):
+    """
+    Analiza un año específico con JRC Global Surface Water
+    VERSIÓN SIMPLIFICADA Y ROBUSTA
+    """
+    try:
+        # Filtrar GSW por año
+        year_img = gsw.filter(ee.Filter.eq('year', ano)).first()
+        
+        # Verificar si hay imagen
+        if not year_img:
+            return {
+                'area_inundada': 0,
+                'porcentaje': 0,
+                'sensor': 'JRC GSW (sin datos)',
+                'imagenes': 0
+            }
+        
+        # Crear máscara para áreas con agua (valor 2 = agua permanente, valor 1 = estacional)
+        water_mask = year_img.eq(2).Or(year_img.eq(1))
+        
+        # Calcular área total del AOI
+        area_total = geometry.area(maxError=1).divide(10000).getInfo()
+        
+        # Calcular área inundada usando pixelArea
+        area_inundada_img = water_mask.multiply(ee.Image.pixelArea()).divide(10000)
+        
+        # Usar reduceRegion con parámetros conservadores
+        area_stats = area_inundada_img.reduceRegion(
+            reducer=ee.Reducer.sum(),
+            geometry=geometry,
+            scale=30,
+            maxPixels=1e9,
+            bestEffort=True
+        ).getInfo()
+        
+        # Extraer área inundada de manera robusta
+        area_ha = 0
+        if area_stats:
+            # Buscar el valor en las posibles keys
+            for key in ['constant', 'sum', 'b1', 'classification']:
+                if key in area_stats and area_stats[key] is not None:
+                    area_ha = max(area_ha, area_stats[key])
+        
+        # Calcular porcentaje
+        porcentaje = (area_ha / area_total * 100) if area_total > 0 else 0
+        
+        return {
+            'area_inundada': area_ha,
+            'porcentaje': porcentaje,
+            'sensor': 'JRC GSW',
+            'imagenes': 1
+        }
+        
+    except Exception as e:
+        return {
+            'area_inundada': 0,
+            'porcentaje': 0,
+            'sensor': 'JRC GSW (error)',
+            'imagenes': 0
+        }
+
+def analizar_sentinel2_ndwi_ano(geometry, ano):
+    """
+    Analiza un año específico con Sentinel-2 NDWI
+    VERSIÓN SIMPLIFICADA Y ROBUSTA
+    """
+    try:
+        # Definir fechas
+        fecha_inicio = f"{ano}-01-01"
+        if ano == 2025:
+            fecha_fin = "2025-04-30"  # Solo hasta abril 2025
+        else:
+            fecha_fin = f"{ano}-12-31"
+        
+        # Intentar primero con colección armonizada
+        s2_collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
+            .filterDate(fecha_inicio, fecha_fin) \
+            .filterBounds(geometry) \
+            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50))
+        
+        # Contar imágenes
+        num_imagenes = s2_collection.size().getInfo()
+        
+        # Si no hay suficientes imágenes, intentar con colección principal
+        if num_imagenes == 0:
+            s2_collection = ee.ImageCollection('COPERNICUS/S2_SR') \
+                .filterDate(fecha_inicio, fecha_fin) \
+                .filterBounds(geometry) \
+                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50))
+            
+            num_imagenes = s2_collection.size().getInfo()
+        
+        if num_imagenes == 0:
+            return {
+                'area_inundada': 0,
+                'porcentaje': 0,
+                'sensor': 'Sentinel-2 (sin datos)',
+                'imagenes': 0
+            }
+        
+        # Función para calcular NDWI simplificada
+        def add_ndwi(image):
+            # Calcular NDWI: (Green - NIR) / (Green + NIR)
+            ndwi = image.normalizedDifference(['B3', 'B8']).rename('NDWI')
+            
+            # Máscara de nubes básica
+            try:
+                cloud_mask = image.select('QA60').bitwiseAnd(1 << 10).eq(0)
+            except:
+                cloud_mask = ee.Image(1)  # Sin máscara si falla
+            
+            return image.addBands(ndwi).updateMask(cloud_mask)
+        
+        # Aplicar función a la colección
+        s2_ndwi = s2_collection.map(add_ndwi)
+        
+        # Calcular composición anual (mediana para ser más conservador)
+        ndwi_median = s2_ndwi.select('NDWI').median()
+        
+        # Crear máscara de agua usando umbral científico
+        water_mask = ndwi_median.gt(0.2)  # Umbral más conservador
+        
+        # Calcular área total del AOI
+        area_total = geometry.area(maxError=1).divide(10000).getInfo()
+        
+        # Calcular área inundada
+        area_inundada_img = water_mask.multiply(ee.Image.pixelArea()).divide(10000)
+        
+        area_stats = area_inundada_img.reduceRegion(
+            reducer=ee.Reducer.sum(),
+            geometry=geometry,
+            scale=20,  # Resolución más conservadora
+            maxPixels=1e9,
+            bestEffort=True
+        ).getInfo()
+        
+        # Extraer área inundada de manera robusta
+        area_ha = 0
+        if area_stats:
+            for key in ['NDWI', 'constant', 'sum', 'b1']:
+                if key in area_stats and area_stats[key] is not None:
+                    area_ha = max(area_ha, area_stats[key])
+        
+        # Calcular porcentaje
+        porcentaje = (area_ha / area_total * 100) if area_total > 0 else 0
+        
+        return {
+            'area_inundada': area_ha,
+            'porcentaje': porcentaje,
+            'sensor': 'Sentinel-2 NDWI',
+            'imagenes': num_imagenes
+        }
+        
+    except Exception as e:
+        return {
+            'area_inundada': 0,
+            'porcentaje': 0,
+            'sensor': 'Sentinel-2 (error)',
+            'imagenes': 0
+        }
+
 def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
     """
     Analiza el riesgo de inundación usando datos de Earth Engine
@@ -2255,7 +2417,7 @@ def mostrar_analisis_inundacion_kmz():
             🌊 Análisis de Riesgo Hídrico
         </h3>
         <p style="color: #ffffff !important; margin: 0 !important; font-size: 1.1rem !important;">
-            Analiza el riesgo de inundación basado en datos históricos 2005-2025
+            Analiza el riesgo de inundación basado en datos históricos 1984-2025
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -2283,10 +2445,10 @@ def mostrar_analisis_inundacion_kmz():
         with col1:
             anos_analisis = st.slider(
                 "📅 Años de análisis:",
-                min_value=2005,
+                min_value=1984,
                 max_value=2025,
-                value=(2005, 2025),
-                help="Rango de años para análisis histórico de inundaciones"
+                value=(1984, 2025),
+                help="Rango de años para análisis histórico (1984-2025). GSW: 1984-2019, Sentinel-2: 2020-2025"
             )
         
         with col2:
