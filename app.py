@@ -1827,64 +1827,79 @@ def procesar_campos_cuit(cuit, solo_activos=True):
 
 def analizar_gsw_ano(geometry, ano, gsw):
     """
-    VERSIÓN EXACTA como Google Earth Engine que funciona
-    Basada en: yearImg.eq(2) - SOLO agua permanente
+    VERSIÓN CON DEBUGGING EXTREMO para encontrar el problema
     """
     try:
-        # Filtrar GSW por año - EXACTO como GEE
-        year_img = gsw.filter(ee.Filter.eq('year', ano)).first()
+        st.write(f"🔍 DEBUG: Iniciando análisis GSW para año {ano}")
         
-        # Verificar si hay imagen - EXACTO como GEE
-        if not year_img:
+        # Filtrar GSW por año
+        year_img = gsw.filter(ee.Filter.eq('year', ano)).first()
+        st.write(f"🔍 DEBUG: Imagen filtrada para año {ano}")
+        
+        # NO usar getInfo() que puede fallar - usar método más robusto
+        try:
+            # Intentar procesar directamente sin verificación
+            water_mask = year_img.eq(2)
+            st.write(f"🔍 DEBUG: Máscara de agua creada para año {ano}")
+            
+            # Calcular área
+            area_inundada = water_mask.multiply(ee.Image.pixelArea()).divide(10000) \
+                .reduceRegion(
+                    reducer=ee.Reducer.sum(),
+                    geometry=geometry,
+                    scale=30,
+                    maxPixels=1e9,
+                    bestEffort=True
+                ).getInfo()
+            
+            st.write(f"🔍 DEBUG: Resultado reduceRegion para año {ano}: {area_inundada}")
+            
+            # Extraer área
+            area_ha = 0
+            if area_inundada:
+                for key in area_inundada.keys():
+                    st.write(f"🔍 DEBUG: Key '{key}' = {area_inundada[key]}")
+                    if area_inundada[key] and area_inundada[key] > 0:
+                        area_ha = area_inundada[key]
+                        break
+            
+            # Calcular porcentaje
+            area_total = geometry.area(maxError=1).divide(10000).getInfo()
+            porcentaje = (area_ha / area_total * 100) if area_total > 0 else 0
+            
+            st.write(f"🔍 DEBUG: Área total: {area_total:.1f} ha")
+            st.write(f"🔍 DEBUG: Área inundada: {area_ha:.1f} ha ({porcentaje:.1f}%)")
+            
+            if area_ha > 0:
+                st.success(f"🎉 GSW {ano}: DETECTÓ {area_ha:.1f} ha ({porcentaje:.1f}%)")
+            else:
+                st.warning(f"⚪ GSW {ano}: Sin agua detectada")
+            
+            return {
+                'area_inundada': area_ha,
+                'porcentaje': porcentaje,
+                'sensor': 'JRC GSW',
+                'imagenes': 1
+            }
+            
+        except Exception as e2:
+            st.error(f"❌ Error procesando GSW {ano}: {str(e2)}")
+            # Intentar con método alternativo
+            st.write(f"🔄 Intentando método alternativo para año {ano}...")
+            
             return {
                 'area_inundada': 0,
                 'porcentaje': 0,
-                'sensor': 'JRC GSW (sin imagen)',
+                'sensor': f'JRC GSW (error específico: {str(e2)[:100]})',
                 'imagenes': 0
             }
         
-        # Crear máscara EXACTA como GEE: yearImg.eq(2) - SOLO agua permanente
-        water_mask = year_img.eq(2)
-        
-        # Calcular área EXACTO como GEE
-        area_inundada = water_mask.multiply(ee.Image.pixelArea()).divide(10000) \
-            .reduceRegion(
-                reducer=ee.Reducer.sum(),
-                geometry=geometry,
-                scale=30,
-                maxPixels=1e9
-            ).getInfo()
-        
-        # Obtener el valor del área - MÉTODO EXACTO como GEE
-        area_ha = 0
-        if area_inundada:
-            # Buscar en todas las keys posibles
-            for key in area_inundada.keys():
-                if area_inundada[key] and area_inundada[key] > 0:
-                    area_ha = area_inundada[key]
-                    break
-        
-        # Calcular área total y porcentaje
-        area_total = geometry.area(maxError=1).divide(10000).getInfo()
-        porcentaje = (area_ha / area_total * 100) if area_total > 0 else 0
-        
-        # DEBUG: Mostrar información detallada
-        if area_ha > 0:
-            st.write(f"✅ GSW {ano}: Detectó {area_ha:.1f} ha ({porcentaje:.1f}%)")
-        
-        return {
-            'area_inundada': area_ha,
-            'porcentaje': porcentaje,
-            'sensor': 'JRC GSW',
-            'imagenes': 1
-        }
-        
     except Exception as e:
-        st.error(f"❌ Error GSW {ano}: {str(e)}")
+        st.error(f"❌ Error general GSW {ano}: {str(e)}")
         return {
             'area_inundada': 0,
             'porcentaje': 0,
-            'sensor': f'JRC GSW (error: {str(e)[:50]})',
+            'sensor': f'JRC GSW (error general: {str(e)[:100]})',
             'imagenes': 0
         }
 def analizar_sentinel2_ndwi_ano(geometry, ano):
@@ -2008,7 +2023,7 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
             geometry = aoi
         
         st.markdown("### 🔬 **Metodología Científica Completa (GSW + Sentinel-2)**")
-        # ARREGLO PESTAÑAS GSW: st.markdown("**📊 JRC Global Surface Water (1984-2019) + Sentinel-2 NDWI (2020-2025)**")
+        st.markdown("**📊 JRC Global Surface Water (1984-2019) + Sentinel-2 NDWI (2020-2025)**")
         
         # Calcular área del AOI
         area_aoi = geometry.area(maxError=1).divide(10000).getInfo()  # en hectáreas
@@ -2105,7 +2120,7 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
         # MENSAJE INFORMATIVO para campos sin agua
         if len(areas_inundadas) == 0:
             st.info("ℹ️ **Campo agrícola sin historial de agua** - Esto es normal para campos de cultivo")
-        # ARREGLO PESTAÑAS GSW: st.markdown("**Interpretación**: Este polígono corresponde a un campo agrícola que no presenta historial de inundaciones o agua superficial permanente, lo cual es esperado para áreas dedicadas a la agricultura.")
+            st.markdown("**Interpretación**: Este polígono corresponde a un campo agrícola que no presenta historial de inundaciones o agua superficial permanente, lo cual es esperado para áreas dedicadas a la agricultura.")
         
         if resultados_por_ano:
             # Crear DataFrame para análisis
@@ -2155,7 +2170,7 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
                     categoria_riesgo = "Muy Alto"
                 
                 st.success(f"🎉 **Análisis completado**: {len(resultados_por_ano)} años analizados")
-        # ARREGLO PESTAÑAS GSW: st.info(f"📊 **Riesgo promedio**: {riesgo_promedio:.1f}% - Categoría: {categoria_riesgo}")
+                st.info(f"📊 **Riesgo promedio**: {riesgo_promedio:.1f}% - Categoría: {categoria_riesgo}")
                 
                 # Mostrar información de lagos/lagunas
                 if lagos_detectados:
@@ -2471,10 +2486,10 @@ def main():
         
     with tabs[1]:
         mostrar_analisis_cuit()
-# ARREGLO PESTAÑAS:         # MOSTRAR RESULTADOS DENTRO DE LA PESTAÑA CUIT
-# ARREGLO PESTAÑAS:         if st.session_state.analisis_completado and st.session_state.resultados_analisis:
-# ARREGLO PESTAÑAS:             if st.session_state.resultados_analisis.get('fuente') == 'CUIT':
-# ARREGLO PESTAÑAS:                 mostrar_resultados_analisis()
+        # MOSTRAR RESULTADOS DENTRO DE LA PESTAÑA CUIT
+        if st.session_state.analisis_completado and st.session_state.resultados_analisis:
+            if st.session_state.resultados_analisis.get('fuente') == 'CUIT':
+                mostrar_resultados_analisis()
     
     st.markdown("---")
     st.markdown("""
@@ -2491,460 +2506,23 @@ def mostrar_analisis_kmz():
     
     with sub_tabs[0]:
         mostrar_analisis_cultivos_kmz()
-    
-        # MOSTRAR RESULTADOS DE CULTIVOS DENTRO DE LA SUB-PESTAÑA
+        
+        # MOSTRAR RESULTADOS DE CULTIVOS SOLO AQUÍ
         if st.session_state.analisis_completado and st.session_state.resultados_analisis:
-            if st.session_state.resultados_analisis.get('fuente') == 'KMZ':
-                tipo_analisis = st.session_state.resultados_analisis.get('tipo_analisis', 'cultivos')
-                if tipo_analisis == 'cultivos':
-                    mostrar_resultados_analisis()
+            if (st.session_state.resultados_analisis.get('fuente') == 'KMZ' and 
+                st.session_state.resultados_analisis.get('tipo_analisis') == 'cultivos'):
+                mostrar_resultados_analisis()
     
     with sub_tabs[1]:
         mostrar_analisis_inundacion_kmz()
-        # MOSTRAR RESULTADOS DE INUNDACIÓN DENTRO DE LA SUB-PESTAÑA
+        
+        # MOSTRAR RESULTADOS DE INUNDACIÓN SOLO AQUÍ
         if st.session_state.analisis_completado and st.session_state.resultados_analisis:
-            if st.session_state.resultados_analisis.get('fuente') == 'KMZ':
-                tipo_analisis = st.session_state.resultados_analisis.get('tipo_analisis', 'cultivos')
-                if tipo_analisis == 'inundacion':
-# ARREGLO PESTAÑAS:                     mostrar_resultados_inundacion()
-
-def mostrar_analisis_cultivos_kmz():
-    """Análisis de cultivos desde archivos KMZ"""
-    
-    # 🔥 ÁREA DE UPLOAD - FORZADO CON !IMPORTANT PARA QUE FUNCIONE
-    st.markdown("""
-    <div style="background: linear-gradient(135deg, #2a2a2a, #1a1a1a) !important; 
-                padding: 25px !important; border-radius: 15px !important; margin: 20px 0 !important; 
-                border: 2px solid #00D2BE !important; text-align: center !important;">
-        <h3 style="color: #00D2BE !important; margin: 0 0 15px 0 !important; font-weight: bold !important;">
-            📁 Carga de Archivos KMZ
-        </h3>
-        <p style="color: #ffffff !important; margin: 0 !important; font-size: 1.1rem !important;">
-            Selecciona uno o más archivos KMZ para analizar cultivos y rotación
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    uploaded_files = st.file_uploader(
-        "🌾 Selecciona tus archivos KMZ",
-        type=['kmz'],
-        accept_multiple_files=True,
-        help="💡 Puedes subir múltiples archivos KMZ para analizar cultivos y rotación. ⚠️ En móviles puede no funcionar - usa computadora para mejores resultados.",
-        key="kmz_uploader_cultivos"
-    )
-    
-    if uploaded_files:
-        st.success(f"✅ {len(uploaded_files)} archivo(s) subido(s) correctamente")
-        
-        with st.expander("📋 Ver detalles de archivos subidos"):
-            for file in uploaded_files:
-                file_size_mb = file.size / (1024 * 1024)
-                st.write(f"📄 **{file.name}** - {file_size_mb:.2f} MB ({file.size:,} bytes)")
-        
-        # BOTÓN DE ANÁLISIS - SOLO PROCESA Y GUARDA EN SESSION STATE
-        if st.button("🚀 Analizar Cultivos y Rotación", type="primary", key="btn_analizar_cultivos_kmz"):
-            with st.spinner("🔄 Procesando análisis completo..."):
-                # Procesar archivos KMZ
-                todos_los_poligonos = []
-                nombres_archivos = []
-                
-                for uploaded_file in uploaded_files:
-                    poligonos = procesar_kmz_uploaded(uploaded_file)
-                    todos_los_poligonos.extend(poligonos)
-                    # Extraer nombre sin extensión para usar en descargas
-                    nombre_limpio = uploaded_file.name.replace('.kmz', '').replace('.KMZ', '')
-                    # Limpiar caracteres especiales para nombre de archivo
-                    nombre_limpio = re.sub(r'[^\w\s-]', '', nombre_limpio).strip()
-                    nombre_limpio = re.sub(r'[-\s]+', '_', nombre_limpio)
-                    nombres_archivos.append(nombre_limpio)
-                
-                if not todos_los_poligonos:
-                    st.error("❌ No se encontraron polígonos válidos en los archivos")
-                    st.session_state.analisis_completado = False
-                    return
-                
-                # Crear AOI
-                aoi = crear_ee_feature_collection_web(todos_los_poligonos)
-                if not aoi:
-                    st.error("❌ No se pudo crear el área de interés")
-                    st.session_state.analisis_completado = False
-                    return
-                
-                # Ejecutar análisis
-                resultado = analizar_cultivos_web(aoi)
-                
-                if len(resultado) == 4:
-                    df_cultivos, area_total, tiles_urls, cultivos_por_campana = resultado
-                else:
-                    df_cultivos, area_total = resultado[:2]
-                    tiles_urls = {}
-                    cultivos_por_campana = {}
-                
-                if df_cultivos is not None and not df_cultivos.empty:
-                    # GUARDAR TODO EN SESSION STATE
-                    # ARREGLO PESTAÑAS: st.session_state.resultados_analisis = {
-                    # 'tipo_analisis': 'cultivos',
-                    # 'df_cultivos': df_cultivos,
-                    # 'area_total': area_total,
-                    # 'tiles_urls': tiles_urls,
-                    # 'cultivos_por_campana': cultivos_por_campana,
-                    # 'aoi': aoi,
-                    # 'archivo_info': f"{len(uploaded_files)} archivo(s) - {len(todos_los_poligonos)} polígonos",
-                    # 'nombres_archivos': nombres_archivos,  # Guardar nombres para descargas
-                    # 'fuente': 'KMZ'  # Identificar fuente
-                    # }
-                    st.session_state.analisis_completado = True
-                    st.success("🎉 ¡Análisis completado exitosamente!")
-                    # SIN RERUN para mantener la pestaña activa
-                    st.info("📋 Los resultados aparecerán abajo.")
-                    
-                    # Mostrar resumen rápido en la misma pestaña
-                    st.markdown("### 📊 Resumen Rápido")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Área Total", f"{area_total:,.1f} ha")
-                    with col2:
-                        cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
-                        st.metric("Cultivos", f"{cultivos_detectados:,}")
-                    with col3:
-                        st.metric("Archivo", f"{len(uploaded_files)} KMZ")
-                else:
-                    st.error("❌ No se pudieron analizar los cultivos")
-                    st.session_state.analisis_completado = False
-
-def mostrar_analisis_inundacion_kmz():
-    """Análisis de riesgo hídrico desde archivos KMZ"""
-    
-    # 🔥 ÁREA DE UPLOAD PARA INUNDACIÓN
-    st.markdown("""
-    <div style="background: linear-gradient(135deg, #2a2a2a, #1a1a1a) !important; 
-                padding: 25px !important; border-radius: 15px !important; margin: 20px 0 !important; 
-                border: 2px solid #00D2BE !important; text-align: center !important;">
-        <h3 style="color: #00D2BE !important; margin: 0 0 15px 0 !important; font-weight: bold !important;">
-            🌊 Análisis de Riesgo Hídrico
-        </h3>
-        <p style="color: #ffffff !important; margin: 0 !important; font-size: 1.1rem !important;">
-            Analiza el riesgo de inundación basado en datos históricos 1984-2025
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    uploaded_files_inund = st.file_uploader(
-        "🌊 Selecciona tus archivos KMZ",
-        type=['kmz'],
-        accept_multiple_files=True,
-        help="💡 Archivos KMZ para análisis de riesgo hídrico. El análisis incluye frecuencia de inundación, áreas afectadas y mapas de riesgo.",
-        key="kmz_uploader_inundacion"
-    )
-    
-    if uploaded_files_inund:
-        st.success(f"✅ {len(uploaded_files_inund)} archivo(s) subido(s) para análisis hídrico")
-        
-        with st.expander("📋 Ver detalles de archivos subidos"):
-            for file in uploaded_files_inund:
-                file_size_mb = file.size / (1024 * 1024)
-                st.write(f"📄 **{file.name}** - {file_size_mb:.2f} MB ({file.size:,} bytes)")
-        
-        # Configuración del análisis
-        st.markdown("### ⚙️ Configuración del Análisis")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            anos_analisis = st.slider(
-                "📅 Años de análisis:",
-                min_value=1984,
-                max_value=2025,
-                value=(1984, 2025),
-                help="Rango de años para análisis histórico (1984-2025). GSW: 1984-2019, Sentinel-2: 2020-2025"
-            )
-        
-        with col2:
-            umbral_inundacion = st.slider(
-                "🌊 Umbral de inundación (%):",
-                min_value=5,
-                max_value=50,
-                value=20,
-                help="Porcentaje mínimo de área inundada para considerar evento significativo"
-            )
-        
-        # BOTÓN DE ANÁLISIS DE INUNDACIÓN
-        if st.button("🌊 Analizar Riesgo Hídrico", type="primary", key="btn_analizar_inundacion_kmz"):
-            # 🚨 LIMPIAR RESULTADOS ANTERIORES PARA EVITAR CACHE DE FUNCIÓN ANTIGUA
-            st.session_state.analisis_completado = False
-            st.session_state.resultados_analisis = None
-            
-            with st.spinner("🔄 Analizando riesgo hídrico (esto puede tardar varios minutos)..."):
-                # Procesar archivos KMZ
-                todos_los_poligonos = []
-                nombres_archivos = []
-                
-                for uploaded_file in uploaded_files_inund:
-                    poligonos = procesar_kmz_uploaded(uploaded_file)
-                    todos_los_poligonos.extend(poligonos)
-                    nombre_limpio = uploaded_file.name.replace('.kmz', '').replace('.KMZ', '')
-                    nombre_limpio = re.sub(r'[^\w\s-]', '', nombre_limpio).strip()
-                    nombre_limpio = re.sub(r'[-\s]+', '_', nombre_limpio)
-                    nombres_archivos.append(nombre_limpio)
-                
-                if not todos_los_poligonos:
-                    st.error("❌ No se encontraron polígonos válidos en los archivos")
-                    st.session_state.analisis_completado = False
-                    return
-                
-                # Crear AOI
-                aoi = crear_ee_feature_collection_web(todos_los_poligonos)
-                if not aoi:
-                    st.error("❌ No se pudo crear el área de interés")
-                    st.session_state.analisis_completado = False
-                    return
-                
-                # Ejecutar análisis de inundación
-                resultado_inundacion = analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion)
-                
-                if resultado_inundacion:
-# ARREGLO PESTAÑAS:                     # GUARDAR RESULTADOS DE INUNDACIÓN
-# ARREGLO PESTAÑAS:                     # ARREGLO PESTAÑAS: st.session_state.resultados_analisis = {
-# ARREGLO PESTAÑAS:                         'tipo_analisis': 'inundacion',
-# ARREGLO PESTAÑAS:                         'resultado_inundacion': resultado_inundacion,
-# ARREGLO PESTAÑAS:                         'aoi': aoi,
-# ARREGLO PESTAÑAS:                         'archivo_info': f"{len(uploaded_files_inund)} archivo(s) - {len(todos_los_poligonos)} polígonos",
-# ARREGLO PESTAÑAS:                         'nombres_archivos': nombres_archivos,
-# ARREGLO PESTAÑAS:                         'fuente': 'KMZ',
-# ARREGLO PESTAÑAS:                         'config_analisis': {
-# ARREGLO PESTAÑAS:                             'anos_analisis': anos_analisis,
-# ARREGLO PESTAÑAS:                             'umbral_inundacion': umbral_inundacion
-# ARREGLO PESTAÑAS:                         }
-# ARREGLO PESTAÑAS:                     }
-                    st.session_state.analisis_completado = True
-                    st.success("🎉 ¡Análisis de riesgo hídrico completado!")
-                    st.info("📋 Los resultados aparecerán abajo.")
-                    
-                    # Mostrar resumen rápido
-                    st.markdown("### 📊 Resumen Rápido - Riesgo Hídrico")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Área Total", f"{resultado_inundacion.get('area_total_ha', 0):,.1f} ha")
-                    with col2:
-                        st.metric("Años Analizados", f"{anos_analisis[1] - anos_analisis[0] + 1} años")
-                    with col3:
-                        st.metric("Riesgo Promedio", f"{resultado_inundacion.get('riesgo_promedio', 0):.1f}%")
-                else:
-                    st.error("❌ No se pudo analizar el riesgo hídrico")
-                    st.session_state.analisis_completado = False
-
-def mostrar_analisis_cuit():
-    """Muestra la interfaz para análisis por CUIT"""
-    st.markdown("""
-    <div style="background: linear-gradient(135deg, #2a2a2a, #1a1a1a) !important; 
-                padding: 25px !important; border-radius: 15px !important; margin: 20px 0 !important; 
-                border: 2px solid #00D2BE !important; text-align: center !important;">
-        <h3 style="color: #00D2BE !important; margin: 0 0 15px 0 !important; font-weight: bold !important;">
-            🔍 Análisis por CUIT
-        </h3>
-        <p style="color: #ffffff !important; margin: 0 !important; font-size: 1.1rem !important;">
-            Consulta automática de coordenadas para obtener polígonos y analizar cultivos
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Input para CUIT
-    cuit_input = st.text_input(
-        "🏢 Ingresá el CUIT del productor:",
-        placeholder="30-12345678-9",
-        key="cuit_input",
-        help="💡 Consulta automática de coordenadas de campos registrados"
-    )
-    
-    # Opción para elegir entre campos activos o históricos
-    solo_activos = st.radio(
-        "¿Qué campos querés analizar?",
-        ["Solo campos activos", "Todos los campos (incluye históricos)"],
-        key="tipo_campos_cuit",
-        horizontal=True
-    ) == "Solo campos activos"
-    
-    # NUEVA OPCIÓN: Análisis individual o general
-    st.markdown("---")
-    tipo_analisis = st.radio(
-        "¿Cómo querés analizar los cultivos?",
-        ["🌾 Análisis General (todos los campos juntos)", "🎯 Análisis Individual (campo por campo)"],
-        key="tipo_analisis_cuit",
-        horizontal=True,
-        help="General: Un solo análisis con todos los campos como AOI único. Individual: Análisis separado por cada campo."
-    )
-    
-    if st.button("🚀 Analizar Cultivos por CUIT", type="primary", key="btn_analizar_cuit"):
-        if cuit_input:
-            try:
-                with st.spinner("🔄 Analizando polígonos y coordenadas..."):
-                    # Procesar campos del CUIT
-                    poligonos_data = procesar_campos_cuit(cuit_input, solo_activos)
-                    
-                    if not poligonos_data:
-                        st.error("❌ No se encontraron campos válidos para este CUIT")
-                        return
-                    
-                    # Mostrar información de campos encontrados
-                    st.success(f"✅ Se encontraron {len(poligonos_data)} campos con coordenadas")
-                    
-                    # Mostrar detalles de los campos
-                    with st.expander("📋 Ver detalles de campos encontrados"):
-                        for i, campo in enumerate(poligonos_data):
-                            st.write(f"""
-                            **Campo {i+1}**: {campo.get('titular', 'Sin titular')}  
-                            **Localidad**: {campo.get('localidad', 'Sin información')}  
-                            **Superficie**: {campo.get('superficie', 0):.1f} ha
-                            """)
-                    
-                    # ANÁLISIS SEGÚN TIPO ELEGIDO
-                    if "Individual" in tipo_analisis:
-                        # 🎯 ANÁLISIS INDIVIDUAL POR CAMPO
-                        with st.spinner("🔄 Ejecutando análisis individual por campo..."):
-                            resultados_individuales = []
-                            campo_mas_grande = None
-                            max_superficie = 0
-                            
-                            for i, campo_data in enumerate(poligonos_data):
-                                st.write(f"🔄 Analizando Campo {i+1}: {campo_data.get('titular', 'Sin titular')}...")
-                                
-                                # Crear AOI individual para este campo
-                                aoi_individual = crear_ee_feature_collection_web([campo_data])
-                                
-                                if aoi_individual:
-                                    # Análisis individual
-                                    resultado = analizar_cultivos_web(aoi_individual)
-                                    
-                                    if len(resultado) >= 2:
-                                        df_cultivos_ind, area_total_ind = resultado[:2]
-                                        tiles_urls_ind = resultado[2] if len(resultado) > 2 else {}
-                                        cultivos_por_campana_ind = resultado[3] if len(resultado) > 3 else {}
-                                        
-                                        if df_cultivos_ind is not None and not df_cultivos_ind.empty:
-                                            # Agregar información del campo al dataframe
-                                            df_cultivos_ind['campo_nombre'] = campo_data.get('titular', f'Campo_{i+1}')
-                                            df_cultivos_ind['campo_numero'] = i + 1
-                                            df_cultivos_ind['campo_localidad'] = campo_data.get('localidad', 'Sin información')
-                                            df_cultivos_ind['campo_superficie_total'] = campo_data.get('superficie', 0)
-                                            
-                                            resultado_campo = {
-                                                'campo_numero': i + 1,
-                                                'campo_nombre': campo_data.get('titular', f'Campo_{i+1}'),
-                                                'campo_localidad': campo_data.get('localidad', 'Sin información'),
-                                                'campo_superficie': campo_data.get('superficie', 0),
-                                                'df_cultivos': df_cultivos_ind,
-                                                'area_total': area_total_ind,
-                                                'tiles_urls': tiles_urls_ind,
-                                                'cultivos_por_campana': cultivos_por_campana_ind,
-                                                'aoi': aoi_individual,
-                                                'coords': campo_data.get('coords', [])
-                                            }
-                                            resultados_individuales.append(resultado_campo)
-                                            
-                                            # Encontrar campo más grande
-                                            if campo_data.get('superficie', 0) > max_superficie:
-                                                max_superficie = campo_data.get('superficie', 0)
-                                                campo_mas_grande = resultado_campo
-                            
-                            if resultados_individuales:
-                                # GUARDAR RESULTADOS INDIVIDUALES EN SESSION STATE
-                                # ARREGLO PESTAÑAS: st.session_state.resultados_analisis = {
-                                # 'tipo': 'individual',
-                                # 'resultados_individuales': resultados_individuales,
-                                # 'campo_principal': campo_mas_grande,
-                                # 'total_campos': len(resultados_individuales),
-                                # 'superficie_total': sum(r['campo_superficie'] for r in resultados_individuales),
-                                # 'fuente': 'CUIT_INDIVIDUAL',
-                                # 'cuit_info': {
-                                # 'cuit': cuit_input,
-                                # 'campos_encontrados': len(poligonos_data),
-                                # 'solo_activos': solo_activos
-                                # },
-                                # 'nombres_archivos': [f"CUIT_{normalizar_cuit(cuit_input).replace('-', '')}_individual"]
-                                # }
-                                st.session_state.analisis_completado = True
-                                st.success("🎉 ¡Análisis individual completado exitosamente!")
-                                st.info("📋 Los resultados de cada campo aparecerán abajo.")
-                                
-                                # Mostrar resumen rápido
-                                st.markdown("### 📊 Resumen por Campo")
-                                for resultado in resultados_individuales:
-                                    with st.expander(f"🏡 {resultado['campo_nombre']} - {resultado['campo_superficie']:.1f} ha", expanded=False):
-                                        col1, col2, col3 = st.columns(3)
-                                        with col1:
-                                            st.metric("Área Total", f"{resultado['area_total']:,.1f} ha")
-                                        with col2:
-                                            cultivos_detectados = resultado['df_cultivos'][resultado['df_cultivos']['Área (ha)'] > 0]['Cultivo'].nunique()
-                                            st.metric("Cultivos", f"{cultivos_detectados:,}")
-                                        with col3:
-                                            st.metric("Localidad", resultado['campo_localidad'])
-                            else:
-                                st.error("❌ No se pudieron analizar los campos individualmente")
-                                st.session_state.analisis_completado = False
-                    
-                    else:
-                        # 🌾 ANÁLISIS GENERAL (ORIGINAL)
-                        # Crear AOI
-                        aoi = crear_ee_feature_collection_web(poligonos_data)
-                        if not aoi:
-                            st.error("❌ No se pudo crear el área de interés")
-                            return
-                        
-                        # Ejecutar análisis
-                        with st.spinner("🔄 Ejecutando análisis general de cultivos..."):
-                            resultado = analizar_cultivos_web(aoi)
-                            
-                            if len(resultado) == 4:
-                                df_cultivos, area_total, tiles_urls, cultivos_por_campana = resultado
-                            else:
-                                df_cultivos, area_total = resultado[:2]
-                                tiles_urls = {}
-                                cultivos_por_campana = {}
-                            
-                            if df_cultivos is not None and not df_cultivos.empty:
-                                # GUARDAR TODO EN SESSION STATE
-                                # ARREGLO PESTAÑAS: st.session_state.resultados_analisis = {
-                                # 'tipo': 'general',
-                                # 'df_cultivos': df_cultivos,
-                                # 'area_total': area_total,
-                                # 'tiles_urls': tiles_urls,
-                                # 'cultivos_por_campana': cultivos_por_campana,
-                                # 'aoi': aoi,
-                                # 'archivo_info': f"CUIT: {cuit_input} - {len(poligonos_data)} campos",
-                                # 'nombres_archivos': [f"CUIT_{normalizar_cuit(cuit_input).replace('-', '')}"],
-                                # 'fuente': 'CUIT',  # Identificar fuente
-                                # 'cuit_info': {
-                                # 'cuit': cuit_input,
-                                # 'campos_encontrados': len(poligonos_data),
-                                # 'solo_activos': solo_activos
-                                # },
-                                # 'poligonos_data': poligonos_data  # Para generar KMZ
-                                # }
-                                st.session_state.analisis_completado = True
-                                st.success("🎉 ¡Análisis completado exitosamente!")
-                                # SIN RERUN para mantener la pestaña activa
-                                st.info("📋 Los resultados aparecerán abajo. Podés cambiar de pestaña para verlos en detalle.")
-                                
-                                # Mostrar resumen rápido en la misma pestaña
-                                st.markdown("### 📊 Resumen Rápido")
-                                col1, col2, col3 = st.columns(3)
-                                with col1:
-                                    st.metric("Área Total", f"{area_total:,.1f} ha")
-                                with col2:
-                                    cultivos_detectados = df_cultivos[df_cultivos['Área (ha)'] > 0]['Cultivo'].nunique()
-                                    st.metric("Cultivos", f"{cultivos_detectados:,}")
-                                with col3:
-                                    st.metric("Campos", f"{len(poligonos_data)} encontrados")
-                            else:
-                                st.error("❌ No se pudieron analizar los cultivos")
-                                st.session_state.analisis_completado = False
-                            
-            except ValueError as e:
-                st.error("❌ CUIT inválido. Verificá el formato (XX-XXXXXXXX-X)")
-            except Exception as e:
-                st.error(f"❌ Error procesando CUIT: {e}")
-        else:
-            st.warning("⚠️ Por favor, ingresá un CUIT válido")
-
+            if (st.session_state.resultados_analisis.get('fuente') == 'KMZ' and 
+                st.session_state.resultados_analisis.get('tipo_analisis') == 'inundacion'):
+                st.markdown("---")
+                st.markdown("## 🌊 Resultados del Análisis de Riesgo Hídrico")
+                mostrar_resultados_inundacion()
 def mostrar_resultados_analisis():
     """Muestra los resultados del análisis completo"""
     st.markdown("---")
