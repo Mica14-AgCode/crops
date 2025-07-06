@@ -2059,7 +2059,7 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
         # Analizar cada año con GSW
         for ano in anos_completos:
             if ano <= 2019:  # Solo GSW hasta 2019
-        print(f"🔍 PYTHON DEBUG: Analizando GSW año {ano}")
+                print(f"🔍 PYTHON DEBUG: Analizando GSW año {ano}")
                 st.markdown(f"🔍 Analizando año {ano} con **JRC GSW**...")
                 resultado = analizar_gsw_ano(geometry, ano, gsw)
                 if resultado and resultado['area_inundada'] > 0:
