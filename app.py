@@ -2492,20 +2492,20 @@ def mostrar_analisis_kmz():
     with sub_tabs[0]:
         mostrar_analisis_cultivos_kmz()
     
-# ARREGLO PESTAÑAS:         # MOSTRAR RESULTADOS DE CULTIVOS DENTRO DE LA SUB-PESTAÑA
-# ARREGLO PESTAÑAS:         if st.session_state.analisis_completado and st.session_state.resultados_analisis:
-# ARREGLO PESTAÑAS:             if st.session_state.resultados_analisis.get('fuente') == 'KMZ':
-# ARREGLO PESTAÑAS:                 tipo_analisis = st.session_state.resultados_analisis.get('tipo_analisis', 'cultivos')
-# ARREGLO PESTAÑAS:                 if tipo_analisis == 'cultivos':
-# ARREGLO PESTAÑAS:                     mostrar_resultados_analisis()
-# ARREGLO PESTAÑAS:     
-# ARREGLO PESTAÑAS:     with sub_tabs[1]:
-# ARREGLO PESTAÑAS:         mostrar_analisis_inundacion_kmz()
-# ARREGLO PESTAÑAS:         # MOSTRAR RESULTADOS DE INUNDACIÓN DENTRO DE LA SUB-PESTAÑA
-# ARREGLO PESTAÑAS:         if st.session_state.analisis_completado and st.session_state.resultados_analisis:
-# ARREGLO PESTAÑAS:             if st.session_state.resultados_analisis.get('fuente') == 'KMZ':
-# ARREGLO PESTAÑAS: # ARREGLO PESTAÑAS:                 tipo_analisis = st.session_state.resultados_analisis.get('tipo_analisis', 'cultivos')
-# ARREGLO PESTAÑAS:                 if tipo_analisis == 'inundacion':
+        # MOSTRAR RESULTADOS DE CULTIVOS DENTRO DE LA SUB-PESTAÑA
+        if st.session_state.analisis_completado and st.session_state.resultados_analisis:
+            if st.session_state.resultados_analisis.get('fuente') == 'KMZ':
+                tipo_analisis = st.session_state.resultados_analisis.get('tipo_analisis', 'cultivos')
+                if tipo_analisis == 'cultivos':
+                    mostrar_resultados_analisis()
+    
+    with sub_tabs[1]:
+        mostrar_analisis_inundacion_kmz()
+        # MOSTRAR RESULTADOS DE INUNDACIÓN DENTRO DE LA SUB-PESTAÑA
+        if st.session_state.analisis_completado and st.session_state.resultados_analisis:
+            if st.session_state.resultados_analisis.get('fuente') == 'KMZ':
+                tipo_analisis = st.session_state.resultados_analisis.get('tipo_analisis', 'cultivos')
+                if tipo_analisis == 'inundacion':
 # ARREGLO PESTAÑAS:                     mostrar_resultados_inundacion()
 
 def mostrar_analisis_cultivos_kmz():
