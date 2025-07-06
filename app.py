@@ -2702,19 +2702,19 @@ def mostrar_analisis_inundacion_kmz():
                 resultado_inundacion = analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion)
                 
                 if resultado_inundacion:
-                    # GUARDAR RESULTADOS DE INUNDACIÓN
-                    st.session_state.resultados_analisis = {
-                        'tipo_analisis': 'inundacion',
-                        'resultado_inundacion': resultado_inundacion,
-                        'aoi': aoi,
-                        'archivo_info': f"{len(uploaded_files_inund)} archivo(s) - {len(todos_los_poligonos)} polígonos",
-                        'nombres_archivos': nombres_archivos,
-                        'fuente': 'KMZ',
-                        'config_analisis': {
-                            'anos_analisis': anos_analisis,
-                            'umbral_inundacion': umbral_inundacion
-                        }
-                    }
+# ARREGLO PESTAÑAS:                     # GUARDAR RESULTADOS DE INUNDACIÓN
+# ARREGLO PESTAÑAS:                     st.session_state.resultados_analisis = {
+# ARREGLO PESTAÑAS:                         'tipo_analisis': 'inundacion',
+# ARREGLO PESTAÑAS:                         'resultado_inundacion': resultado_inundacion,
+# ARREGLO PESTAÑAS:                         'aoi': aoi,
+# ARREGLO PESTAÑAS:                         'archivo_info': f"{len(uploaded_files_inund)} archivo(s) - {len(todos_los_poligonos)} polígonos",
+# ARREGLO PESTAÑAS:                         'nombres_archivos': nombres_archivos,
+# ARREGLO PESTAÑAS:                         'fuente': 'KMZ',
+# ARREGLO PESTAÑAS:                         'config_analisis': {
+# ARREGLO PESTAÑAS:                             'anos_analisis': anos_analisis,
+# ARREGLO PESTAÑAS:                             'umbral_inundacion': umbral_inundacion
+# ARREGLO PESTAÑAS:                         }
+# ARREGLO PESTAÑAS:                     }
                     st.session_state.analisis_completado = True
                     st.success("🎉 ¡Análisis de riesgo hídrico completado!")
                     st.info("📋 Los resultados aparecerán abajo.")
