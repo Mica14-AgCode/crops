@@ -2080,6 +2080,28 @@ def analizar_riesgo_hidrico_web(aoi, anos_analisis, umbral_inundacion):
                     st.markdown(f"   ⚪ **S2 {ano}**: Sin datos")
         
         # Procesar resultados y calcular estadísticas
+        # Crear DataFrame SIEMPRE, incluso si no hay inundaciones
+        df_inundacion = pd.DataFrame([
+            {
+                'Año': ano,
+                'Área Total (ha)': area_aoi,
+                'Área Inundada (ha)': datos['area_inundada'],
+                'Porcentaje Inundación': datos['porcentaje'],
+                'Sensor': datos['sensor'],
+                'Imágenes': datos['imagenes']
+            }
+            for ano, datos in resultados_por_ano.items()
+        ])
+        
+        # Calcular estadísticas INCLUSO SI NO HAY AGUA
+        areas_inundadas = [r['area_inundada'] for r in resultados_por_ano.values() if r['area_inundada'] > 0]
+        porcentajes = [r['porcentaje'] for r in resultados_por_ano.values() if r['porcentaje'] > 0]
+        
+        # MENSAJE INFORMATIVO para campos sin agua
+        if len(areas_inundadas) == 0:
+            st.info("ℹ️ **Campo agrícola sin historial de agua** - Esto es normal para campos de cultivo")
+            st.markdown("**Interpretación**: Este polígono corresponde a un campo agrícola que no presenta historial de inundaciones o agua superficial permanente, lo cual es esperado para áreas dedicadas a la agricultura.")
+        
         if resultados_por_ano:
             # Crear DataFrame para análisis
             df_inundacion = pd.DataFrame([
@@ -2627,7 +2649,7 @@ def mostrar_analisis_kmz():
     with sub_tabs[0]:
         mostrar_analisis_cultivos_kmz()
     
-            # MOSTRAR RESULTADOS DE CULTIVOS DENTRO DE LA SUB-PESTAÑA
+        # MOSTRAR RESULTADOS DE CULTIVOS DENTRO DE LA SUB-PESTAÑA
         if st.session_state.analisis_completado and st.session_state.resultados_analisis:
             if st.session_state.resultados_analisis.get('fuente') == 'KMZ':
                 tipo_analisis = st.session_state.resultados_analisis.get('tipo_analisis', 'cultivos')
